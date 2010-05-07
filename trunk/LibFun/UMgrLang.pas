@@ -44,7 +44,7 @@ interface
 
 uses
   Windows, Classes, Controls, ComCtrls, SysUtils, Menus, NativeXml, ULibFun,
-  TypInfo;
+  UAdjustForm, TypInfo;
 
 type
   TMultiLangItem = record
@@ -446,11 +446,16 @@ end;
 procedure EnumSubComponentList(const nPItem: TComponent; const nList: TList);
 var i,nCount: integer;
 begin
-  nCount := nPItem.ComponentCount - 1;
-  for i:=0 to nCount do
+  with nPItem do
   begin
-    nList.Add(nPItem.Components[i]);
-    EnumSubComponentList(nPItem.Components[i], nList);
+    nCount := ComponentCount - 1;
+
+    for i:=0 to nCount do
+    if nList.IndexOf(Components[i]) < 1 then
+    begin
+      nList.Add(Components[i]);
+      EnumSubComponentList(Components[i], nList);
+    end;
   end;
 end;
 
@@ -468,6 +473,8 @@ begin
   nList := TList.Create;
   try
     nList.Add(nItem);
+    if nItem is TWinControl then
+      EnumSubCtrlList(TWinControl(nItem), nList);
     EnumSubComponentList(nItem, nList);
 
     nCount := nList.Count - 1;
