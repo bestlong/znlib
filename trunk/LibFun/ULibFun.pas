@@ -25,6 +25,10 @@ type
     FValue: string;                                  //宏取值
   end;
 
+  TFloatRelationType = (rtGreater, rtGE, rtEqual, rtLE, rtLess);
+  //浮点关系(>, >=, =, <=, <)
+
+//------------------------------------------------------------------------------
 function MI(const nMacro,nValue: string): TMacroItem;
 function MacroValue(const nData: string; const nMacro: array of TMacroItem): string;
 //处理宏定义
@@ -71,6 +75,9 @@ function Float2PInt(const nValue: Double; const nPrecision: Integer;
 function Float2Float(const nValue: Double; const nPrecision: Integer;
  const nRound: Boolean = True): Double;
 //按精度转换浮点
+function FloatRelation(const nA,nB: Double; const nType: TFloatRelationType;
+ const nPrecision: Integer = 100): Boolean;
+//浮点关系判定
 
 //------------------------------------------------------------------------------
 function GetFileVersionStr(const nFile: string): string;
@@ -531,15 +538,19 @@ function Float2PInt(const nValue: Double; const nPrecision: Integer;
 var nStr: string;
     nPos: integer;
 begin
-  nStr := Format('%.2f', [nValue * nPrecision]);
+  nStr := FloatToStr(nValue * nPrecision);
   nPos := Pos('.', nStr);
-  Result := StrToInt64(Copy(nStr, 1, nPos - 1));
 
-  if nRound then
+  if nPos > 1 then
   begin
-    System.Delete(nStr, 1, nPos);
-    if StrToInt(nStr) > 54 then Inc(Result);
-  end;
+    Result := StrToInt64(Copy(nStr, 1, nPos - 1));
+    if nRound then
+    begin
+      System.Delete(nStr, 1, nPos);
+      nStr := Copy(nStr, 1, 2);
+      if StrToInt(nStr) > 54 then Inc(Result);
+    end;
+  end else Result := StrToInt64(nStr);
 end;
 
 //Date: 2010-4-21
@@ -549,6 +560,26 @@ function Float2Float(const nValue: Double; const nPrecision: Integer;
  const nRound: Boolean = True): Double;
 begin
   Result := Float2PInt(nValue, nPrecision, nRound) / nPrecision;
+end;
+
+//Date: 2010-7-14
+//Parm: 浮点数A,B;待判定关系;判定精度
+//Desc: 按nPrecision精度,判定nA、nB是否满足nType关系
+function FloatRelation(const nA,nB: Double; const nType: TFloatRelationType;
+ const nPrecision: Integer = 100): Boolean;
+var nIA,nIB: Int64;
+begin
+  Result := False;
+  nIA := Float2PInt(nA, nPrecision, False);
+  nIB := Float2PInt(nB, nPrecision, False);
+
+  case nType of
+   rtGreater: Result := nIA > nIB;
+   rtGE: Result := nIA >= nIB;
+   rtEqual: Result := nIA = nIB;
+   rtLE: Result := nIA <= nIB;
+   rtLess: Result := nIA < nIB;
+  end;
 end;
 
 //------------------------------------------------------------------------------
