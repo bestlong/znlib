@@ -196,6 +196,7 @@ begin
   begin
     Shell_NotifyIcon(NIM_DELETE, @FData);
     Classes.DeallocateHWnd(FData.Wnd);
+    Application.UnhookMainWindow(FApplicationHook);
   end;
 
   if FIcon <> nil then
