@@ -23,7 +23,10 @@ type
     procedure WMEraseBkgnd(var nMessage: TMessage); message WM_ERASEBKGND;
     procedure WMParentInvalid(var nMessage: TMessage); message WM_ParentInvalid;
   public
+    InvalidRect: TRect;
+    //无效区域
     procedure InvalidPanel;
+    //更新无效区域
   published
     property Align;
     property Anchors;
@@ -54,6 +57,7 @@ end;
 
 procedure TZnTransPanel.CreateParams(var nParams: TCreateParams);
 begin
+  InvalidRect := Rect(0, 0, 0, 0);
   inherited CreateParams(nParams);
 
   if not (csDesigning in ComponentState) then
@@ -84,9 +88,18 @@ procedure TZnTransPanel.InvalidPanel;
 var nRect: PRect;
 begin
   New(nRect);
-  nRect.TopLeft := ClientToScreen(ClientRect.TopLeft);
-  nRect.BottomRight := ClientToScreen(ClientRect.BottomRight);
+  if InvalidRect.Left = InvalidRect.Right then
+  begin
+    nRect.TopLeft := ClientToScreen(ClientRect.TopLeft);
+    nRect.BottomRight := ClientToScreen(ClientRect.BottomRight);
+  end else
+  begin
+    nRect.TopLeft := ClientToScreen(InvalidRect.TopLeft);
+    nRect.BottomRight := ClientToScreen(InvalidRect.BottomRight);
+  end;
+
   PostMessage(Handle, WM_ParentInvalid, Integer(nRect), 0);
+  InvalidRect := Rect(0, 0, 0, 0);
 end;
 
 //Desc: 擦出背景
