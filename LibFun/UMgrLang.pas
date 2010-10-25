@@ -250,7 +250,8 @@ var i,nLen: Integer;
 begin
   nLen := High(FPropItems);
   for i:=Low(FPropItems) to nLen do
-   if CompareText(nClassName, FPropItems[i].FClassName) = 0 then Exit;
+   if (CompareText(nClassName, FPropItems[i].FClassName) = 0) and
+      (CompareText(nProp, FPropItems[i].FProperty) = 0) then Exit;
   //xxxxx
 
   Inc(nLen);
@@ -369,6 +370,22 @@ begin
   end;
 end;
 
+//Desc: 对nValue进行编码处理,过滤回车符或其它特殊字符
+function RegularValue(const nValue: string; const nEncode: Boolean): string;
+begin
+  if nEncode then
+  begin
+    Result := StringReplace(nValue, #13#10, '$DA;', [rfReplaceAll]);
+    Result := StringReplace(Result, #13, '$D;', [rfReplaceAll]);
+    Result := StringReplace(Result, #10, '$A;', [rfReplaceAll]);
+  end else
+  begin
+    Result := StringReplace(nValue, '$DA;', #13#10, [rfReplaceAll]);
+    Result := StringReplace(Result, '$D;', #13, [rfReplaceAll]);
+    Result := StringReplace(Result, '$A;', #10, [rfReplaceAll]);
+  end;
+end;
+
 //Desc: 获取nID对应的
 function TMultiLangManager.GetTextByID(const nID: string): string;
 var nNode: TXmlNode;
@@ -385,7 +402,7 @@ begin
     begin
       nNode := nNode.FindNode(FLang);
       if Assigned(nNode) then
-        Result := nNode.ValueAsString;
+        Result := RegularValue(nNode.ValueAsString, False);
       Exit;
     end;
   end;
@@ -415,7 +432,7 @@ begin
     begin
       nNode := nNode.FindNode(FLang);
       if Assigned(nNode) then
-        Result := nNode.ValueAsString;
+        Result := RegularValue(nNode.ValueAsString, False);
       Exit;
     end;
   end;
@@ -436,7 +453,7 @@ begin
     //xxxxx
 
     for nIdx:=Low(FLangItems) to High(FLangItems) do
-      nNode.NodeNew(FLangItems[nIdx].FLangID).ValueAsString := nLang;
+      nNode.NodeNew(FLangItems[nIdx].FLangID).ValueAsString := RegularValue(nLang, True);
     FHasChanged := True;
   end;
 end;
@@ -501,10 +518,12 @@ begin
   end;
 end;
 
-//Desc: 构建以nPrefix的节点ID
-function MakeID(const nPrefix,nName: string): string;
+//Desc: 构建以nPrefix为前缀,nSuffix为后缀的节点ID
+function MakeID(const nPrefix,nName: string; const nSuffix: string = ''): string;
 begin
-  Result := Format('%s_%s', [nPrefix, nName]);
+  if nSuffix = '' then
+       Result := Format('%s_%s', [nPrefix, nName])
+  else Result := Format('%s_%s:%s', [nPrefix, nName, nSuffix]);
 end;
 
 //Desc: 枚举nPMenu的所有子菜单项
@@ -651,30 +670,114 @@ begin
   else SetStrProp(nObj, 'Caption', nStr);
 end;
 
+//------------------------------------------------------------------------------
+//Date: 2010-9-1
+//Parm: 对象;属性(Ex:a.b.c)
+//Desc: 查找nProp属性所在的对象,支持连级属性(Ex:c在b对象上,返回b)
+function FindPropObj(const nCtrl: TObject; var nProp: string): TObject;
+var nObj: TObject;
+    nList: TStrings;
+begin
+  Result := nil;
+
+  if Pos('.', nProp) < 2 then
+  begin
+    if IsPublishedProp(nCtrl, nProp) then
+      Result := nCtrl;
+    Exit;
+  end;
+
+  nList := TStringList.Create;
+  try
+    if SplitStr(nProp, nList, 0, '.') and IsPublishedProp(nCtrl, nList[0]) and
+       (PropType(nCtrl, nList[0]) = tkClass) then
+    begin
+      nObj := GetObjectProp(nCtrl, nList[0]);
+      if Assigned(nObj) then
+      begin
+        nList.Delete(0);
+        nProp := CombinStr(nList, '.');
+        Result := FindPropObj(nObj, nProp);
+      end;
+    end;
+  finally
+    nList.Free;
+  end;
+end;
+
+//Desc: 将nValue赋予nList.Text,直接等值会导致nList.Objects[]丢失
+procedure SetStringsValue(const nList: TStrings; const nValue: string);
+var nIdx: Integer;
+    nTmp: TStrings;
+begin
+  nTmp := TStringList.Create;
+  try
+    nIdx := 0;
+    nTmp.Text := nValue;
+
+    while (nIdx < nTmp.Count) and (nIdx < nList.Count) do
+    begin
+      nList[nIdx] := nTmp[nIdx];
+      Inc(nIdx);
+    end;
+  finally
+    nTmp.Free;
+  end;
+end;
+
+//Date: 2010-9-1
+//Parm: 对象;属性;值;读or写
+//Desc: 读写nCtrl.nProg的值
+procedure DoCtrlProg(const nCtrl: TObject; const nProg: string;
+ var nValue: string; const nGet: Boolean = True);
+var nObj: TObject;
+begin
+  if PropType(nCtrl, nProg) = tkClass then
+  begin
+    nObj := GetObjectProp(nCtrl, nProg);
+    if nObj is TStrings then
+    begin
+      if nGet then
+           nValue := RegularValue((nObj as TStrings).Text, True)
+      else SetStringsValue(nObj as TStrings, RegularValue(nValue, False));
+    end;
+
+    Exit;
+  end;
+
+  if nGet then
+       nValue := GetStrProp(nCtrl, nProg)
+  else SetStrProp(nCtrl, nProg, nValue);
+end;
+
 //Desc: 翻译公共常用组件
 function TMultiLangManager.TranslateCommCtrl(const nCtrl: TComponent): Boolean;
-var nStr,nVal: string;
+var nObj: TObject;
     i,nCount: Integer;
+    nStr,nVal,nID,nProp: string;
 begin
   Result := False;
-  nStr := nCtrl.ClassName;
   nCount := High(FPropItems);
 
   for i:=Low(FPropItems) to nCount do
-  if (CompareText(nStr, FPropItems[i].FClassName) = 0) and
-     IsPublishedProp(nCtrl, FPropItems[i].FProperty) then
+  if CompareText(nCtrl.ClassName, FPropItems[i].FClassName) = 0 then
   begin
-    nStr := GetTextByID(MakeID('COM', nCtrl.Name));
+    nProp := FPropItems[i].FProperty;
+    nObj := FindPropObj(nCtrl, nProp);
+    if not Assigned(nObj) then Continue;
+
+    nID := MakeID('COM', nCtrl.Name, FPropItems[i].FProperty);
+    nStr := GetTextByID(nID);
 
     if nStr = '' then
     begin
-      nVal := GetStrProp(nCtrl, FPropItems[i].FProperty);
+      DoCtrlProg(nObj, nProp, nVal, True);
       nStr := GetTextByText(nVal, FNowLang);
     end;
 
     if nStr = '' then
-         NewLangItem(MakeID('COM', nCtrl.Name), nVal)
-    else SetStrProp(nCtrl, FPropItems[i].FProperty, nStr);
+         NewLangItem(nID, nVal)
+    else DoCtrlProg(nObj, nProp, nStr, False);
 
     Result := True;
     //同组件多属性,不予退出
