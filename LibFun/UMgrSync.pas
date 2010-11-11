@@ -28,16 +28,18 @@ type
   private
     FBuffer: TThreadList;
     {*缓冲区*}
+    FDataList: TList;
+    {*数据列表*}
     FHandle: THandle;
     {*窗口句柄*}
-    FIsBusy: Boolean;
-    {*消息忙状态*}
+    FMaxRecord: Integer;
+    {*最大记录*}
   protected
     procedure WndProc(var nMsg: TMessage);
     {*消息链*}
     procedure ClearBufferList; overload;
-    procedure ClearBufferList(const nList: TList); overload;
-    {*清理缓冲*}
+    procedure ClearDataList(const nList: TList); overload;
+    {*清理资源*}
     procedure DoSync(const nData: Pointer; const nSize: Cardinal); virtual; abstract;
     procedure DoDataFree(const nData: Pointer; const nSize: Cardinal); virtual; abstract;
     {*抽象方法*}
@@ -49,6 +51,8 @@ type
     {*添加数据*}
     procedure ApplySync;
     {*开启同步*}
+    property MaxRecord: Integer read FMaxRecord write FMaxRecord;
+    {*属性相关*}
   end;
 
   TSyncProcedure = procedure (const nData: Pointer; const nSize: Cardinal);
@@ -82,14 +86,15 @@ implementation
 const
   cMaxRecord = 5000;
   WM_LParam  = $27;
-  WM_WParam  = $55;
   WM_NewData = WM_User + $22;
 
 //------------------------------------------------------------------------------
 constructor TCustomDataSynchronizer.Create;
 begin
   inherited Create;
-  FIsBusy := False;
+  FMaxRecord := cMaxRecord;
+
+  FDataList := TList.Create;
   FBuffer := TThreadList.Create;
   FHandle := Classes.AllocateHWnd(WndProc);
 end;
@@ -99,6 +104,9 @@ begin
   Classes.DeAllocateHwnd(FHandle);
   ClearBufferList;
   FBuffer.Free;
+
+  ClearDataList(FDataList);
+  FDataList.Free;
   inherited;
 end;
 
@@ -108,14 +116,14 @@ var nList: TList;
 begin
   nList := FBuffer.LockList;
   try
-    ClearBufferList(nList);
+    ClearDataList(nList);
   finally
     FBuffer.UnlockList;
   end;
 end;
 
 //Desc: 释放nList缓冲
-procedure TCustomDataSynchronizer.ClearBufferList(const nList: TList);
+procedure TCustomDataSynchronizer.ClearDataList(const nList: TList);
 var nIdx: integer;
     nData: PSyncItemData;
 begin
@@ -135,24 +143,32 @@ var nList: TList;
     i,nCount: integer;
     nItem: PSyncItemData;
 begin
-  if (not FIsBusy) and (nMsg.Msg = WM_NewData) and
-     (nMsg.LParam = WM_LParam) and
-     (nMsg.WParam = WM_WParam) then
+  if (nMsg.Msg = WM_NewData) and (nMsg.LParam = WM_LParam) then
   begin
-    FIsBusy := True;
     nList := FBuffer.LockList;
     try
-      nCount := nList.Count - 1;
-      for i:=0 to nCount do
+      while nList.Count > 0 do
       begin
-        nItem := nList[i];
-        DoSync(nItem.FData, nItem.FSize);
+        FDataList.Add(nList[0]);
+        nList.Delete(0);
       end;
     finally
-      ClearBufferList(nList);
-      FIsBusy := False;
       FBuffer.UnlockList;
     end;
+
+    if FDataList.Count < 1 then Exit;
+    nCount := FDataList.Count - 1;
+
+    for i:=0 to nCount do
+    try
+      nItem := FDataList[i];
+      DoSync(nItem.FData, nItem.FSize);
+    except
+      //ignor any error
+    end;
+
+    ClearDataList(FDataList);
+    //xxxxx
   end;
 end;
 
@@ -163,7 +179,7 @@ var nList: TList;
 begin
   nList := FBuffer.LockList;
   try
-    if nList.Count >= cMaxRecord then
+    if (FMaxRecord > 0) and (nList.Count >= FMaxRecord) then
     begin
       DoDataFree(nData, nSize); Exit;
     end;
@@ -182,7 +198,7 @@ end;
 //Desc: 开启同步
 procedure TCustomDataSynchronizer.ApplySync;
 begin
-  PostMessage(FHandle, WM_NewData, WM_WParam, WM_LParam);
+  PostMessage(FHandle, WM_NewData, 0, WM_LParam);
 end;
 
 //------------------------------------------------------------------------------
