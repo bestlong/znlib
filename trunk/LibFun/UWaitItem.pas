@@ -3,9 +3,12 @@
   描述: 实现一个等待对象
 
   描述:
-  &.TWaitObject在EnterWait后,所有的唤醒操作只是设置"等待标记",下一次进入等待后,
-  发现"等待标记"直接退出,而不会执行WaitForSingleObject过程.
-  &.EnterWait与LeaveWait是组函数,必须成对儿调用.
+  &.TWaitObject在EnterWait后进入阻塞,直到Wakeup唤醒.
+  &.该对象多线程安全,即A线程EnterWait,B线程Wakeup.
+
+  *.注意:
+  &.方法EnterWait与Wakeup成对出现,即使多线程操作,也需要先EnterWait->Wakeup.
+    对于EnterWait->EnterWait,Wakeup->Wakeup是不成功的.
 *******************************************************************************}
 unit UWaitItem;
 
@@ -14,9 +17,6 @@ interface
 uses
   Windows, Classes;
 
-const
-  Wait_BusyWait = $0000;
-
 type
   TWaitObject = class(TObject)
   private
@@ -24,30 +24,32 @@ type
     {*等待事件*}
     FInterval: Cardinal;
     {*等待间隔*}
+    FStatus: Integer;
+    {*等待状态*}
     FWaitResult: Cardinal;
     {*等待结果*}
-    FIsBusy, FBusyMark: Boolean;
-    {*是否等待*}
   public
     constructor Create;
     destructor Destroy; override;
     {*创建释放*}
-    procedure EnterWait;
-    procedure LeaveWait;
-    {*等待组函数*}
-    procedure WakeUP;
-    {*唤醒等待*}
-    procedure  ResetWait;
-    {*重置等待状态*}
+    function EnterWait: Cardinal;
+    procedure Wakeup;
+    {*等待.唤醒*}
     property WaitResult: Cardinal read FWaitResult;
     property Interval: Cardinal read FInterval write FInterval;
   end;
 
 implementation
 
+const
+  cIsIdle    = $02;
+  cIsWaiting = $27;
+
 constructor TWaitObject.Create;
 begin
   inherited Create;
+  FStatus := cIsIdle;
+
   FInterval := INFINITE;
   FEvent := CreateEvent(nil, False, False, nil);
 end;
@@ -58,35 +60,23 @@ begin
   inherited;
 end;
 
-procedure TWaitObject.EnterWait;
+function TWaitObject.EnterWait: Cardinal;
+var nInt: Integer;
 begin
-  if FBusyMark then
-  begin
-    FBusyMark := False;
-    FWaitResult := Wait_BusyWait;
-  end else
-  begin
-    FWaitResult := WaitForSingleObject(FEvent, FInterval);
-    FIsBusy := True;
-    ResetEvent(FEvent);
-  end;
+  nInt := InterlockedExchange(FStatus, cIsWaiting);
+  if nInt = cIsWaiting then Exit;
+  //is waiting
+
+  Result := WaitForSingleObject(FEvent, FInterval);
+  FWaitResult := Result;    
+  InterlockedExchange(FStatus, cIsIdle);
 end;
 
-procedure TWaitObject.LeaveWait;
+procedure TWaitObject.Wakeup;
 begin
-  FIsBusy := False;
-end;
-
-procedure TWaitObject.ResetWait;
-begin
-  FBusyMark := False;
-end;
-
-procedure TWaitObject.WakeUP;
-begin
-  if FIsBusy then
-       FBusyMark := True
-  else SetEvent(FEvent);
+  if FStatus = cIsWaiting then
+    SetEvent(FEvent);
+  //do this only waiting
 end;
 
 end.
