@@ -164,7 +164,6 @@ begin
           //IO操作可能出错,但日志写入线程不能中止
         end;
       finally
-        FWaiter.LeaveWait;
         FreeLogList(nList);
       end;
     end;
