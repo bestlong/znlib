@@ -32,6 +32,8 @@ type
     function EnterWait: Cardinal;
     procedure Wakeup;
     {*µÈ´ý.»½ÐÑ*}
+    function IsWaiting: Boolean;
+    {*µÈ´ý×´Ì¬*}
     property WaitResult: Cardinal read FWaitResult;
     property Interval: Cardinal read FInterval write FInterval;
   end;
@@ -78,6 +80,11 @@ destructor TWaitObject.Destroy;
 begin
   CloseHandle(FEvent);
   inherited;
+end;
+
+function TWaitObject.IsWaiting: Boolean;
+begin
+  Result := FStatus = cIsWaiting;
 end;
 
 function TWaitObject.EnterWait: Cardinal;
