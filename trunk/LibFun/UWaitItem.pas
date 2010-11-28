@@ -33,6 +33,8 @@ type
     procedure Wakeup;
     {*µÈ´ý.»½ÐÑ*}
     function IsWaiting: Boolean;
+    function IsTimeout: Boolean;
+    function IsWakeup: Boolean;
     {*µÈ´ý×´Ì¬*}
     property WaitResult: Cardinal read FWaitResult;
     property Interval: Cardinal read FInterval write FInterval;
@@ -87,12 +89,26 @@ begin
   Result := FStatus = cIsWaiting;
 end;
 
+function TWaitObject.IsTimeout: Boolean;
+begin
+  if IsWaiting then
+       Result := False
+  else Result := FWaitResult = WAIT_TIMEOUT;
+end;
+
+function TWaitObject.IsWakeup: Boolean;
+begin
+  if IsWaiting then
+       Result := False
+  else Result := FWaitResult = WAIT_OBJECT_0;
+end;
+
 function TWaitObject.EnterWait: Cardinal;
 begin
   InterlockedExchange(FStatus, cIsWaiting);
   Result := WaitForSingleObject(FEvent, FInterval);
 
-  FWaitResult := Result;    
+  FWaitResult := Result;
   InterlockedExchange(FStatus, cIsIdle);
 end;
 
