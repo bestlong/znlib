@@ -148,7 +148,7 @@ ResourceString
                 'Order by M_NewOrder';
   //Select a Program's Menu's Items
 
-  sSelectProID = 'Select * from $Table Where M_Entity=''''';
+  sSelectProID = 'Select * from $Table Where (M_Entity='''') or (M_Entity Is Null)';
   //Get Program list
 
 //------------------------------------------------------------------------------
