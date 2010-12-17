@@ -177,8 +177,8 @@ ResourceString
                 'D_Index integer,' +                        //标题顺序
                 'D_Visible smallint,' +                     //是否可见
 
-                'D_DBTable varchar(15),' +                  //表名称
-                'D_DBField varchar(15),' +                  //字段名
+                'D_DBTable varchar(32),' +                  //表名称
+                'D_DBField varchar(32),' +                  //字段名
                 'D_DBIsKey smallint,' +                     //是否主键
                 'D_DBType smallint,' +                      //数据类型
                 'D_DBWidth smallint,' +                     //字段宽度

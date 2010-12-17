@@ -13,9 +13,12 @@ type
   TMakeInsertProgress = procedure (const nPos: Cardinal) of Object;
   //构建进度
 
-function MakeInsert(const nTable: string; const nDS: TDataSet;
- const nList: TStrings; const nProgress: TMakeInsertProgress = nil): Boolean;
+function DB_MakeInsertSQL(const nTable: string; const nDS: TDataSet;
+ const nList: TStrings; const nProgress: TMakeInsertProgress = nil;
+ const nSingleLine: Boolean = False): Boolean;
 //构建Insert语句
+function DB_SingleLineSQL(const nSQL: string; const nEncrypt: Boolean): string;
+//单行sql
 
 implementation
 
@@ -33,10 +36,31 @@ const
   //支持类型
 
 //------------------------------------------------------------------------------
+//Date: 2010-12-8
+//Parm: sql语句;True:将内容处理为单行,False:还原内容
+//Desc: 处理SQL语句中内容有回车等特殊字符
+function DB_SingleLineSQL(const nSQL: string; const nEncrypt: Boolean): string;
+begin
+  if nEncrypt then
+  begin
+    Result := StringReplace(nSQL, #9, '&9;', [rfReplaceAll]);
+    Result := StringReplace(Result, #10, '&a;', [rfReplaceAll]);
+    Result := StringReplace(Result, #13, '&c;', [rfReplaceAll]);
+    Result := StringReplace(Result, '''', '&p;', [rfReplaceAll]);
+  end else
+  begin
+    Result := StringReplace(nSQL, '&9;', #9, [rfReplaceAll]);
+    Result := StringReplace(Result, '&a;', #10, [rfReplaceAll]);
+    Result := StringReplace(Result, '&c;', #13, [rfReplaceAll]);
+    Result := StringReplace(Result, '&p;', '''', [rfReplaceAll]);
+  end;
+end;
+
 //Date: 2010-10-25
-//Parm: 表名称;数据集
+//Parm: 表名称;数据集;单行SQL
 //Desc: 将nDS当前数据整理成Insert语句
-function BuildInsertSQL(const nTable: string; const nDS: TDataSet): string;
+function BuildInsertSQL(const nTable: string; const nDS: TDataSet;
+ const nSingleLine: Boolean): string;
 var nType: TFieldType;
     i,nCount: Integer;
     nStr,nPrefix,nSuffix: string;
@@ -52,8 +76,12 @@ begin
 
     nPrefix := nPrefix + nDS.Fields[i].FieldName + ',';
     if nType in cFieldStr then
-      nSuffix := nSuffix + Format('''%s'',', [Trim(nDS.Fields[i].AsString)]) else
-    //字符类型
+    begin
+      nStr := Trim(nDS.Fields[i].AsString);
+      if nSingleLine then
+        nStr := DB_SingleLineSQL(nStr, True);
+      nSuffix := nSuffix + Format('''%s'',', [nStr]);
+    end else //字符类型
 
     if nType in cFieldInt then
     begin
@@ -91,10 +119,11 @@ begin
 end;
 
 //Date: 2010-10-25
-//Parm: 表名称;数据集;结果列表;进度回调
+//Parm: 表名称;数据集;结果列表;进度回调;单行SQL
 //Desc: 将nDS中的数据整理成Insert语句,存入nList中
-function MakeInsert(const nTable: string; const nDS: TDataSet;
- const nList: TStrings; const nProgress: TMakeInsertProgress): Boolean;
+function DB_MakeInsertSQL(const nTable: string; const nDS: TDataSet;
+ const nList: TStrings; const nProgress: TMakeInsertProgress;
+ const nSingleLine: Boolean): Boolean;
 var nPos: Cardinal;
 begin
   Result := nDS.Active and (nDS.RecordCount > 0);
@@ -105,7 +134,7 @@ begin
 
   while not nDS.Eof do
   begin
-    nList.Add(BuildInsertSQL(nTable, nDS));
+    nList.Add(BuildInsertSQL(nTable, nDS, nSingleLine));
     nDS.Next;
 
     Inc(nPos);

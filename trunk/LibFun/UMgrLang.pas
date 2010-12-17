@@ -378,11 +378,21 @@ begin
     Result := StringReplace(nValue, #13#10, '$DA;', [rfReplaceAll]);
     Result := StringReplace(Result, #13, '$D;', [rfReplaceAll]);
     Result := StringReplace(Result, #10, '$A;', [rfReplaceAll]);
+    Result := StringReplace(Result, #32, '$B;', [rfReplaceAll]);
+    Result := StringReplace(Result, '<', '$L;', [rfReplaceAll]);
+    Result := StringReplace(Result, '>', '$G;', [rfReplaceAll]);
+    Result := StringReplace(Result, '&', '$M;', [rfReplaceAll]);
+    Result := StringReplace(Result, '''', '$P;', [rfReplaceAll]);
   end else
   begin
     Result := StringReplace(nValue, '$DA;', #13#10, [rfReplaceAll]);
     Result := StringReplace(Result, '$D;', #13, [rfReplaceAll]);
     Result := StringReplace(Result, '$A;', #10, [rfReplaceAll]);
+    Result := StringReplace(Result, '$B;', #32, [rfReplaceAll]);
+    Result := StringReplace(Result, '$L;', '<', [rfReplaceAll]);
+    Result := StringReplace(Result, '$G;', '>', [rfReplaceAll]);
+    Result := StringReplace(Result, '$M;', '&', [rfReplaceAll]);
+    Result := StringReplace(Result, '$P;', '''', [rfReplaceAll]);
   end;
 end;
 
@@ -419,7 +429,7 @@ begin
   Result := '';
   if not Assigned(FNowNode) then Exit;
 
-  nTrim := Trim(nStr);
+  nTrim := RegularValue(nStr, True);
   nCount := FNowNode.NodeCount - 1;
 
   for i:=0 to nCount do
@@ -738,7 +748,7 @@ begin
     if nObj is TStrings then
     begin
       if nGet then
-           nValue := RegularValue((nObj as TStrings).Text, True)
+           nValue := (nObj as TStrings).Text
       else SetStringsValue(nObj as TStrings, RegularValue(nValue, False));
     end;
 
