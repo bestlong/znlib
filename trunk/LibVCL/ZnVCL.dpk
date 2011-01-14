@@ -1,6 +1,8 @@
 package ZnVCL;
 
 {$R *.res}
+{$R 'ZnHideForm.dcr'}
+{$R 'ZnExeData.dcr'}
 {$ALIGN 8}
 {$ASSERTIONS ON}
 {$BOOLEVAL OFF}
@@ -35,6 +37,8 @@ contains
   UTransGlass in 'UTransGlass.pas',
   UTransPanel in 'UTransPanel.pas',
   UHotKeyManager in 'UHotKeyManager.pas',
-  UBitmapPanel in 'UBitmapPanel.pas';
+  UBitmapPanel in 'UBitmapPanel.pas',
+  ZnHideForm in 'ZnHideForm.pas',
+  ZnExeData in 'ZnExeData.pas';
 
 end.
