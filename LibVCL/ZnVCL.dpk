@@ -39,6 +39,7 @@ contains
   UHotKeyManager in 'UHotKeyManager.pas',
   UBitmapPanel in 'UBitmapPanel.pas',
   ZnHideForm in 'ZnHideForm.pas',
-  ZnExeData in 'ZnExeData.pas';
+  ZnExeData in 'ZnExeData.pas',
+  UTrayIcon in 'UTrayIcon.pas';
 
 end.
