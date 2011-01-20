@@ -65,6 +65,10 @@ function SplitStr(const nStr: string; const nList: TStrings; const nNum: Word;
  const nFlag: string = ''): Boolean;
 //合并,拆分字符串
 
+function StrWithWidth(const nStr: string; const nWidth,nStyle: Byte;
+  const nFixChar: Char = #32): string;
+//定长字符串
+
 function SplitValue(const nStr: string; const nList: TStrings): Boolean;
 function SplitIntValue(const nStr: string; const nDef: Integer = 0): Integer;
 function SplitFloatValue(const nStr: string; const nDef: Double = 0): Double;
@@ -463,6 +467,31 @@ begin
   if nNum > 0 then
        Result := nList.Count = nNum
   else Result := nList.Count > 0;
+end;
+
+//Desc: 定长字符串,不足则用nFixChar填充
+function StrWithWidth(const nStr: string; const nWidth,nStyle: Byte;
+ const nFixChar: Char = #32): string;
+var nLen,nHalf: Integer;
+begin
+  nLen := Length(nStr);
+  if nLen >= nWidth then
+  begin
+    Result := nStr; Exit;
+  end;
+
+  nLen := nWidth - nLen;
+  //not enough length
+
+  case nStyle of
+   1: Result := nStr + StringOfChar(nFixChar, nWidth - nLen);
+   2: Result := StringOfChar(nFixChar, nWidth - nLen) + nStr;
+   3: begin
+        nHalf := Trunc(nLen / 2);
+        Result := StringOfChar(nFixChar, nHalf) + nStr +
+                  StringOfChar(nFixChar, nLen - nHalf)
+      end else Result := nStr;
+  end;
 end;
 
 //Desc: 从nStr中拆分出数值,将列表存入nList中
