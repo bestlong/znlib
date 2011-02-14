@@ -91,13 +91,16 @@ var nStr: string;
     nIdx,nBytesNeeded,nReturned: DWORD;
 begin
   nList.Clear;
+  nBuffer := nil;
   Result := EnumPorts(nil, 1, nil, 0, nBytesNeeded, nReturned);
 
   if (not Result) and (GetLastError = ERROR_INSUFFICIENT_BUFFER) then
-  begin
+  try
     GetMem(nBuffer, nBytesNeeded);
-    try
-      Result := EnumPorts(nil, 1, nBuffer, nBytesNeeded, nBytesNeeded, nReturned);
+    Result := EnumPorts(nil, 1, nBuffer, nBytesNeeded, nBytesNeeded, nReturned);
+
+    if Result then
+    begin
       for nIdx := 0 to nReturned - 1 do
       begin
         nInfoPtr := PPortInfo1(DWORD(nBuffer) + nIdx * SizeOf(TPortInfo1));
@@ -109,13 +112,14 @@ begin
           if nList.IndexOf(nStr) < 0 then nList.Add(nStr);
         end;
       end;
-
-      EnumUSBPort(nList);
-      //补充USB转串口
-    finally
-      FreeMem(nBuffer);
     end;
+  finally
+    FreeMem(nBuffer);
   end;
+
+  EnumUSBPort(nList);
+  //补充USB转串口
+  Result := nList.Count > 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -298,8 +302,10 @@ begin
   Result := GetVersionEx(nInfo);
 
   if Result and (nInfo.dwMajorVersion >= 5) then
+  begin
     Result := Win2K_EnumCOMPort(nList);
-  //xxxxx
+    if Result then EnumUSBPort(nList);
+  end;
 
   if not Result then
     Result := GetCOMPortNames(nList);
