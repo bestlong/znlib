@@ -484,8 +484,8 @@ begin
   //not enough length
 
   case nStyle of
-   1: Result := nStr + StringOfChar(nFixChar, nWidth - nLen);
-   2: Result := StringOfChar(nFixChar, nWidth - nLen) + nStr;
+   1: Result := nStr + StringOfChar(nFixChar, nLen);
+   2: Result := StringOfChar(nFixChar, nLen) + nStr;
    3: begin
         nHalf := Trunc(nLen / 2);
         Result := StringOfChar(nFixChar, nHalf) + nStr +
