@@ -782,6 +782,11 @@ begin
     if nStr = '' then
     begin
       DoCtrlProg(nObj, nProp, nVal, True);
+      if FHasItemID then
+      begin
+        NewLangItem(nID, nVal); Continue;
+      end;
+
       nStr := GetTextByText(nVal, FNowLang);
     end;
 
