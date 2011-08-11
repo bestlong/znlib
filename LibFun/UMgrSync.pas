@@ -147,11 +147,10 @@ begin
   begin
     nList := FBuffer.LockList;
     try
-      while nList.Count > 0 do
-      begin
-        FDataList.Add(nList[0]);
-        nList.Delete(0);
-      end;
+      nCount := nList.Count - 1;
+      for i:=0 to nCount do
+        FDataList.Add(nList[i]);
+      nList.Clear;
     finally
       FBuffer.UnlockList;
     end;

@@ -31,6 +31,12 @@ uses
   Windows, Classes, ComCtrls, Controls, DB, Forms, SysUtils, TypInfo, UMgrVar,
   ULibFun, ULibRes, UAdjustForm;
 
+type
+  TSQLFieldType = (sfStr, sfVal, sfDate, sfTime);
+  //string, date, time, value
+
+function SF(const nField,nValue: string; const nType: TSQLFieldType = sfStr): string;
+//make sql field                        
 function IsStrInList(const nList: TStrings; const nStr: string;
  const nFrom: integer = 0; nTo: integer = -1): Boolean;
 //check if nStr is in nList
@@ -711,6 +717,19 @@ begin
     Result := MakeSQLByCtrl(nil, nTable, nWhere, nIsNew, nil, nList);
   finally
     nList.Free;
+  end;
+end;
+
+//Date: 2011-6-30
+//Parm: 字段;值;类型
+//Desc: 构建MakeSQLByStr所需的数据
+function SF(const nField,nValue: string; const nType: TSQLFieldType): string;
+begin
+  case nType of
+   sfStr: Result := Format('%s=''%s''', [nField, nValue]);
+   sfVal: Result := Format('%s=%s', [nField, nValue]);
+   sfDate: Result := Format('%s=''%s''', [nField, Date2Str(Str2Date(nValue))]);
+   sfTime: Result := Format('%s=''%s''', [nField, Time2Str(Str2Time(nValue))]);
   end;
 end;
 

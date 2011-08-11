@@ -16,8 +16,8 @@ uses
 
 //------------------------------------------------------------------------------
 type
-  TDynamicStrArray = array of string;
-  //字符串数组
+  TFloatRelationType = (rtGreater, rtGE, rtEqual, rtLE, rtLess);
+  //浮点关系(>, >=, =, <=, <)
 
   PMacroItem = ^TMacroItem;
   TMacroItem = record
@@ -25,8 +25,10 @@ type
     FValue: string;                                  //宏取值
   end;
 
-  TFloatRelationType = (rtGreater, rtGE, rtEqual, rtLE, rtLess);
-  //浮点关系(>, >=, =, <=, <)
+  TDynamicMacroArray = array of TMacroItem;
+  //宏定义数组
+  TDynamicStrArray = array of string;
+  //字符串数组
 
 //------------------------------------------------------------------------------
 function MI(const nMacro,nValue: string): TMacroItem;
@@ -576,8 +578,8 @@ begin
     if nRound then
     begin
       System.Delete(nStr, 1, nPos);
-      nStr := Copy(nStr, 1, 2);
-      if StrToInt(nStr) > 54 then Inc(Result);
+      nStr := Copy(nStr, 1, 1);
+      if StrToInt(nStr) >= 5 then Inc(Result);
     end;
   end else Result := StrToInt64(nStr);
 end;
