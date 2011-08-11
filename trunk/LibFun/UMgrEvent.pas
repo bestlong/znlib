@@ -1,218 +1,198 @@
 {*******************************************************************************
-  作者: dmzn@ylsoft.com 2007-07-31
-  描述: 事件管理管理器对象
+  作者: dmzn@163.com 2011-04-16
+  描述: 事件管理器对象,动态方法绑定管理.
 
   备注:
-  &.实现事件管理器的类为TEventManager,用于动态绑定组件和已实现的事件.
-  &.原理是:获取事件的指针,把它赋值给特定的组件.举例如下:
-    1.由名称到组件: nEdit := FindComponent('Edit1');
-    2.由名称到事件: nEvent := MethodAddress('Edit1_OnChange');
-    3.动态绑定事件: SetMethodProp(nEdit, 'OnChange', nEvent);
+  *.实现动态方法绑定的类为TDynamicMethodManager.
+  *.TDynamicMethodManager用于动态绑定对象TMethod指针(方法),并维护原有指针.
+  *.源方法失效时,必须手动解除绑定,避免目标对象调用时异常.
 *******************************************************************************}
 unit UMgrEvent;
 
 interface
 
 uses
-  Windows, Classes, Forms, SysUtils, TypInfo;
+  Windows, Classes, Controls, Forms, SysUtils, TypInfo, UAdjustForm;
 
 type
-  TOnEmMsg = procedure (const nMsg: string) of object;
-  {*提示消息*}
-
-  TEventManager = Class
+  TDynamicMethodManager = class(TObject)
   private
-    FParent: TForm;
-    {*组件所在窗体*}
-    FEventReg: TStrings;
-    {*已注册事件*}
-    FEventSet: TStrings;
-    {*敏感事件*}
-    FOnMsg: TOnEmMsg;
-    {*提示消息*}
+    FMethods: TList;
+    {*事件列表*}
   protected
-    procedure HintMsg(const nMsg: string);
-    {*提示消息*}
+    procedure ReleaseItem(const nIdx: Integer);
+    procedure ClearMethods(const nFree: Boolean);
+    {*清理资源*}
+    function FindTarget(const nTarget: TObject; const nMethod: string): Integer;
+    {*检索对象*}
   public
-    constructor Create(AParent: TForm);
+    constructor Create;
     destructor Destroy; override;
-    {*创建与释放*}
-    procedure RegEvent(const nEvent: string);
-    procedure SetEvent(const nEvent: string);
-    {*添加事件*}
-    procedure ClearRegEvents;
-    procedure ClearSetEvents;
-    {*清空事件*}
-    function BindEvent(const nIgnoreSet: Boolean = False): Boolean;
-    {*绑定事件*}
-    procedure SetActiveForm(const nForm: TForm);
-    {*激活待绑定窗体*}
-    property OnMsg: TOnEmMsg read FOnMsg write FOnMsg;
+    {*创建释放*}
+    function BindMethod(const nSource: TObject; const nSMethod: string;
+      const nTarget: TObject; const nTMethod: string;
+      const nSubAll: Boolean = True): Boolean;
+    {*添加绑定*}
+    procedure UnBindMethod(const nSource: TObject; const nSMethod: string = '');
+    {*解除绑定*}
+    procedure ClearAll;
+    {*清理全部*}
   end;
-
-resourcestring
-  Em_UnderLine      = '_';   //下划线
-  Em_Comma          = '.';   //逗点
-  Em_InvalidEvent   = '无效的事件格式';
-  Em_NoImplement    = '未找到匹配的实现过程';
-  Em_NoControl      = '未找到匹配的组件';
-  Em_NoEvent        = '未找到匹配的事件';
 
 implementation
 
-constructor TEventManager.Create(AParent: TForm);
+type
+  PMethodItem = ^TMethodItem;
+  TMethodItem = record
+    FSource: TObject;        //源对象
+    FSMethod: string;        //源方法名
+    FTarget: TObject;        //目标对象
+    FTMethodName: string;    //目标方法名
+    FTLastMethod: TMethod;   //目标旧方法
+  end;
+
+constructor TDynamicMethodManager.Create;
 begin
-  FParent := AParent;
-  FEventReg := TStringList.Create;
-  FEventSet := TStringList.Create;
+  FMethods := TList.Create;
 end;
 
-destructor TEventManager.Destroy;
+destructor TDynamicMethodManager.Destroy;
 begin
-  FEventReg.Free;
-  FEventSet.Free;
+  ClearMethods(True);
   inherited;
 end;
 
-//Date: 2007-08-01
-//Parm: 消息字符串
-//Desc: 触发事件,提示nMsg消息
-procedure TEventManager.HintMsg(const nMsg: string);
+//Desc: 清理资源
+procedure TDynamicMethodManager.ClearMethods(const nFree: Boolean);
+var nIdx: Integer;
 begin
-  if Assigned(FOnMsg) then FOnMsg(nMsg);
+  for nIdx:=FMethods.Count - 1 downto 0 do
+    ReleaseItem(nIdx);
+  if nFree then FreeAndNil(FMethods);
 end;
 
-//Date: 2007-08-01
-//Parm: 注册事件,格式为: ObjName_Event
-//Desc: 注册nEvent事件
-procedure TEventManager.RegEvent(const nEvent: string);
-var nStr: string;
-    nPos: integer;
-    nObj: TComponent;
+//Desc: 清理索引为nIdx的项
+procedure TDynamicMethodManager.ReleaseItem(const nIdx: Integer);
+var nAddr: Pointer;
 begin
-  if FParent.MethodAddress(nEvent) = nil then
-  begin
-    HintMsg(Em_NoImplement); Exit;
-  end;
-
-  nPos := Pos(Em_UnderLine, nEvent);
-  if nPos < 2 then
-  begin
-    HintMsg(Em_InvalidEvent); Exit;
-  end;
-
-  nStr := Copy(nEvent, 1, nPos - 1);
-  nObj := FParent.FindComponent(nStr);
-
-  if Assigned(nObj) then
-  begin
-    nStr := nEvent;
-    Delete(nStr, 1, nPos);
-
-    if IsPublishedProp(nObj, nStr) then
-    begin
-      nStr := LowerCase(nEvent);
-      if FEventReg.IndexOf(nStr) < 0 then FEventReg.Add(nStr);
-    end else HintMsg(Em_NoEvent);
-  end else HintMsg(Em_NoControl);
-end;
-
-//Date: 2007-08-01
-//Parm: 敏感事件,格式为: ObjName.Event
-//Desc: 添加nEvent事件
-procedure TEventManager.SetEvent(const nEvent: string);
-var nStr: string;
-    nPos: integer;
-    nObj: TComponent;
-begin
-  nPos := Pos(Em_Comma, nEvent);
-  if nPos < 2 then
-  begin
-    HintMsg(Em_InvalidEvent); Exit;
-  end;
-
-  nStr := Copy(nEvent, 1, nPos - 1);
-  nObj := FParent.FindComponent(nStr);
-
-  if Assigned(nObj) then
-  begin
-    nStr := nEvent;
-    Delete(nStr, 1, nPos);
-
-    if IsPublishedProp(nObj, nStr) then
-    begin
-      nStr := LowerCase(nEvent);
-      if FEventSet.IndexOf(nStr) < 0 then FEventSet.Add(nStr);
-    end else HintMsg(Em_NoEvent);
-  end else HintMsg(Em_NoControl);
-end;
-
-//Desc: 清空已注册的事件
-procedure TEventManager.ClearRegEvents;
-begin
-  FEventReg.Clear;
-end;
-
-//Desc: 清空敏感事件
-procedure TEventManager.ClearSetEvents;
-begin
-  FEventSet.Clear;
-end;
-
-//Desc: 将事件绑定到nForm窗体上
-procedure TEventManager.SetActiveForm(const nForm: TForm);
-begin
-  ClearRegEvents;
-  ClearSetEvents;
-  FParent := nForm;
-end;
-
-//Date: 2007-08-01
-//Parm: 是否忽略敏感事件的设置
-//Desc: 若忽略,则关联所有已注册事件;否则只关联已注册且为敏感的事件.
-function TEventManager.BindEvent(const nIgnoreSet: Boolean): Boolean;
-var nStr: string;
-    nPos: integer;
-    nList: TStrings;
-    nObj: TComponent;
-    nMethod: TMethod;
-    i,nCount: integer;
-begin
-  nList := TStringList.Create;
+  with PMethodItem(FMethods[nIdx])^ do
   try
-    if nIgnoreSet then
-       nList.AddStrings(FEventReg) else
+    nAddr := GetMethodProp(FTarget, FTMethodName).Code;
+    if Assigned(nAddr) and (nAddr = FSource.MethodAddress(FSMethod)) then
+      SetMethodProp(FTarget, FTMethodName, FTLastMethod);
+    //restor old method
+  except
+    //maybe any error
+  end;
+
+  Dispose(PMethodItem(FMethods[nIdx]));
+  FMethods.Delete(nIdx);
+end;
+
+//Desc: 清理全部
+procedure TDynamicMethodManager.ClearAll;
+begin
+  ClearMethods(False);
+end;
+
+//Date: 2011-4-16
+//Parm: 对象;方法名
+//Desc: 检索对象为nTarget,方法为nMethod的Item所在的索引.
+function TDynamicMethodManager.FindTarget(const nTarget: TObject;
+  const nMethod: string): Integer;
+var nIdx: Integer;
+begin
+  Result := -1;
+
+  for nIdx:=FMethods.Count - 1 downto 0 do
+   with PMethodItem(FMethods[nIdx])^ do
+    if (FTarget = nTarget) and (CompareStr(FTMethodName, nMethod) = 0) then
     begin
-      nCount := FEventSet.Count - 1;
-      for i:=0 to nCount do
+      Result := nIdx; Break;
+    end;
+end;
+
+//Date: 2011-4-16
+//Parm: 源对象;源方法名;目标对象;目标方法名;包括子组件
+//Desc: 将nSource.nSMethod绑定到nTarget.nTMethod上,并备份.
+function TDynamicMethodManager.BindMethod(const nSource: TObject;
+  const nSMethod: string; const nTarget: TObject; const nTMethod: string;
+  const nSubAll: Boolean): Boolean;
+var nSM: TMethod;
+    nList: TList;
+    nIdx: Integer;
+    nCtrl: TObject;
+
+    //Desc: 绑定nObj对象
+    procedure BindItem(const nObj: TObject);
+    var nBI_Idx: Integer;
+        nBI_Method:TMethod;
+        nBI_Item: PMethodItem;
+    begin
+      nBI_Idx := FindTarget(nObj, nTMethod);
+      nBI_Method := GetMethodProp(nObj, nTMethod);
+
+      if (nBI_Idx < 0) or (nBI_Method.Code <> nSM.Code) then
       begin
-        nStr := FEventSet[i];
-        nPos := Pos(Em_Comma, nStr);
-        nStr[nPos] := Em_UnderLine[1]; 
-        if FEventReg.IndexOf(nStr) > -1 then nList.Add(nStr);
+        if nBI_Idx < 0 then
+        begin
+          New(nBI_Item);
+          FMethods.Add(nBI_Item);
+          FillChar(nBI_Item^, SizeOf(TMethodItem), #0);
+        end else nBI_Item := FMethods[nBI_Idx];
+
+        with nBI_Item^ do
+        begin
+          FSource := nSource;
+          FSMethod := nSMethod;
+          FTarget := nObj;
+
+          FTMethodName := nTMethod;
+          if (FTLastMethod.Code = nil) or (nBI_Method.Code <> nSM.Code) then
+            FTLastMethod := nBI_Method;
+          //backup old method
+
+          if nBI_Method.Code <> nSM.Code then
+            SetMethodProp(nObj, nTMethod, nSM);
+          //xxxxx
+        end;
       end;
     end;
+begin
+  nSM.Data := nSource;
+  nSM.Code := nSource.MethodAddress(nSMethod);
+  Result := Assigned(nSM.Data) and IsPublishedProp(nTarget, nTMethod);
+  
+  if not Result then Exit;
+  //must have fix method property
 
-    nCount := nList.Count - 1;
-    for i:=0 to nCount do
+  BindItem(nTarget);
+  if not (nSubAll and (nTarget is TWinControl)) then Exit;
+
+  nList := TList.Create;
+  try
+    EnumSubCtrlList(TWinControl(nTarget), nList);
+    for nIdx:=nList.Count - 1 downto 0 do
     begin
-      nPos := Pos(Em_UnderLine, nList[i]);
-      nStr := Copy(nList[i], 1, nPos - 1);
-      nObj := FParent.FindComponent(nStr);
-
-      nMethod.Code := FParent.MethodAddress(nList[i]);
-      nMethod.Data := FParent;
-
-      nStr := nList[i];
-      Delete(nStr, 1, nPos);
-      SetMethodProp(nObj, nStr, nMethod);
-    end;
-
-    Result := True;
-    //好像没有意义哦
+      nCtrl := nList[nIdx];
+      if IsPublishedProp(nCtrl, nTMethod) then BindItem(nCtrl);
+    end; //bind all sub     
   finally
     nList.Free;
   end;
+end;
+
+//Desc: 解除绑定
+procedure TDynamicMethodManager.UnBindMethod(const nSource: TObject;
+  const nSMethod: string);
+var nIdx: Integer;
+begin
+  for nIdx:=FMethods.Count - 1 downto 0 do
+   with PMethodItem(FMethods[nIdx])^ do
+    if (FSource = nSource) and
+       ((nSMethod = '') or (CompareStr(FSMethod, nSMethod) = 0)) then
+     ReleaseItem(nIdx);
+  //xxxxx
 end;
 
 end.

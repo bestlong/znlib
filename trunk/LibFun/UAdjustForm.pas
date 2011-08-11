@@ -361,6 +361,7 @@ end;
 function GetCXComboBoxData(const nCtrl: TComponent): string;
 var nIdx: integer;
     nObj: TObject;
+    nStyle: string;
     nList: TStrings;
 begin
   Result := '';
@@ -372,10 +373,17 @@ begin
   end else Exit;
 
   nList := nil;
+  nStyle := '';
+
   if IsPublishedProp(nCtrl, 'Properties') and
      (PropType(nCtrl, 'Properties') = tkClass) then
   begin
     nObj := GetObjectProp(nCtrl, 'Properties');
+    if IsPublishedProp(nObj, 'DropDownListStyle') and
+       (PropType(nObj, 'DropDownListStyle') = tkEnumeration) then
+         nStyle := GetEnumProp(nObj, 'DropDownListStyle');
+    //xxxxx
+
     if IsPublishedProp(nObj, 'Items') and (PropType(nObj, 'Items') = tkClass) then
     begin
       nObj := GetObjectProp(nObj, 'Items');
@@ -386,6 +394,11 @@ begin
   if Assigned(nList) then
   begin
     Result := GetStringsItemData(nList, nIdx);
+    if (Result <> '') or (nStyle <> 'lsEditList') then Exit;
+
+    if IsPublishedProp(nCtrl, 'Text') and IsTypeStr(PropType(nCtrl, 'Text')) then
+      Result := GetStrProp(nCtrl, 'Text');
+    //xxxxx
   end;
 end;
 
@@ -451,6 +464,7 @@ end;
 procedure SetCXComboBoxData(const nCtrl: TComponent; const nValue: string);
 var nIdx: integer;
     nObj: TObject;
+    nStyle: string;
     nList: TStrings;
 begin
   nList := nil;
@@ -458,6 +472,11 @@ begin
      (PropType(nCtrl, 'Properties') = tkClass) then
   begin
     nObj := GetObjectProp(nCtrl, 'Properties');
+    if IsPublishedProp(nObj, 'DropDownListStyle') and
+       (PropType(nObj, 'DropDownListStyle') = tkEnumeration) then
+         nStyle := GetEnumProp(nObj, 'DropDownListStyle');
+    //xxxxx
+
     if IsPublishedProp(nObj, 'Items') and (PropType(nObj, 'Items') = tkClass) then
     begin
       nObj := GetObjectProp(nObj, 'Items');
@@ -468,6 +487,13 @@ begin
   if Assigned(nList) then
   begin
     nIdx := GetStringsItemIndex(nList, nValue);
+    if (nIdx < 0) and (nStyle = 'lsEditList') then
+    begin
+      if IsPublishedProp(nCtrl, 'Text') and IsTypeStr(PropType(nCtrl, 'Text')) then
+        SetStrProp(nCtrl, 'Text', nValue);
+      Exit;
+    end;
+
     if IsPublishedProp(nCtrl, 'ItemIndex') and
        IsTypeInteger(PropType(nCtrl, 'ItemIndex')) then
     begin
