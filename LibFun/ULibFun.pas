@@ -60,11 +60,11 @@ function QueryDlg(const nMsg,nTitle: string; const nHwnd: integer = -1): Boolean
 //提示框,询问框
 
 function CombinStr(const nList: TStrings;
- const nFlag: string = ''): string; overload;
+ const nFlag: string = ''; const nFlagEnd: Boolean = True): string; overload;
 function CombinStr(const nStrs: array of string;
- const nFlag: string = ''): string; overload;
+ const nFlag: string = ''; const nFlagEnd: Boolean = True): string; overload;
 function SplitStr(const nStr: string; const nList: TStrings; const nNum: Word;
- const nFlag: string = ''): Boolean;
+ const nFlag: string = ''; const nFlagEnd: Boolean = True): Boolean;
 //合并,拆分字符串
 
 function StrWithWidth(const nStr: string; const nWidth,nStyle: Byte;
@@ -321,7 +321,8 @@ end;
 
 //------------------------------------------------------------------------------
 //Desc: 合并nList成字符串
-function CombinStr(const nList: TStrings; const nFlag: string = ''): string;
+function CombinStr(const nList: TStrings; const nFlag: string;
+  const nFlagEnd: Boolean): string;
 var nStr: string;
     i,nCount: integer;
 begin
@@ -331,15 +332,16 @@ begin
 
   Result := '';
   nCount := nList.Count - 1;
-  
+
   for i:=0 to nCount do
-   if i = nCount then
-        Result := Result + nList[i]
-   else Result := Result + nList[i] + nStr;
+   if (i <> nCount) or nFlagEnd then
+        Result := Result + nList[i] + nStr
+   else Result := Result + nList[i];
 end;
 
 //Desc: 合并nStrs成字符串
-function CombinStr(const nStrs: array of string; const nFlag: string = ''): string;
+function CombinStr(const nStrs: array of string; const nFlag: string;
+  const nFlagEnd: Boolean): string;
 var nStr: string;
     i,nLen: integer;
 begin
@@ -351,9 +353,9 @@ begin
   nLen := High(nStrs);
 
   for i:=Low(nStrs) to nLen do
-   if i = nLen then
-        Result := Result + nStrs[i]
-   else Result := Result + nStrs[i] + nStr;
+   if (i <> nLen) or nFlagEnd then
+        Result := Result + nStrs[i] + nStr
+   else Result := Result + nStrs[i];
 end;
 
 //Desc: 从nStart位置搜索nSub子字符串在nStr中的索引
@@ -443,7 +445,7 @@ end;
 
 //Desc: 拆分nStr为nNum段,存入nList中
 function SplitStr(const nStr: string; const nList: TStrings; const nNum: Word;
-  const nFlag: string = ''): Boolean;
+  const nFlag: string; const nFlagEnd: Boolean): Boolean;
 var nSF: string;
     nPos,nNow,nLen: integer;
 begin
@@ -466,6 +468,16 @@ begin
   nLen := Length(nStr);
   if nNow <= nLen then
     nList.Add(Copy(nStr, nNow, nLen - nNow + 1));
+  //xxxxx
+
+  if (not nFlagEnd) and (nNow = nLen + 1) then
+  begin
+    nLen := Length(nSF);
+    if Copy(nStr, nNow - nLen, nLen) = nSF then
+      nList.Add('');
+    //if nStr not end by flag,but the end is flag,append blank
+  end; 
+
   if nNum > 0 then
        Result := nList.Count = nNum
   else Result := nList.Count > 0;
