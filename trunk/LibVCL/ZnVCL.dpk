@@ -40,6 +40,9 @@ contains
   UBitmapPanel in 'UBitmapPanel.pas',
   ZnHideForm in 'ZnHideForm.pas',
   ZnExeData in 'ZnExeData.pas',
-  UTrayIcon in 'UTrayIcon.pas';
+  UTrayIcon in 'UTrayIcon.pas',
+  UImageButton in 'UImageButton.pas',
+  UGridPainter in 'UGridPainter.pas',
+  UGridExPainter in 'UGridExPainter.pas';
 
 end.
