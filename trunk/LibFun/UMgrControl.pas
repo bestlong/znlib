@@ -318,5 +318,5 @@ end;
 initialization
   gControlManager := TControlManager.Create;
 finalization
-  gControlManager.Free;
+  FreeAndNil(gControlManager);
 end.
