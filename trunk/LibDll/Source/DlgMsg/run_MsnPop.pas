@@ -75,7 +75,11 @@ end;
 //Desc: 释放消息提示框
 procedure PopMsg_Free;
 begin
-  FreeAndNil(gMsger);
+  if Assigned(gMsger) then
+  begin
+    gMsger.ClosePopUps;
+    FreeAndNil(gMsger);
+  end;
 end;
 
 //Date: 2007-01-12
