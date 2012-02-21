@@ -148,24 +148,22 @@ begin
   nList := TList.Create;
   try
     while not Terminated do
-    begin
+    try
       FWaiter.EnterWait;
-      try
-        if Terminated then Break;
-        if GetLogList(nList) then
-        try
-          if Assigned(FOwner.FEvent) then
-             FOwner.FEvent(Self, nList);
-          if Assigned(FOwner.FProcedure) then
-             FOwner.FProcedure(Self, nList);
-          Sleep(1200);
-        except
-          WriteErrorLog(nList);
-          //IO操作可能出错,但日志写入线程不能中止
-        end;
-      finally
+      if Terminated then Break;
+
+      if GetLogList(nList) then
+      begin
+        if Assigned(FOwner.FEvent) then
+           FOwner.FEvent(Self, nList);
+        if Assigned(FOwner.FProcedure) then
+           FOwner.FProcedure(Self, nList);
         FreeLogList(nList);
       end;
+    except
+      WriteErrorLog(nList);
+      FreeLogList(nList);
+      //Sleep(1200);
     end;
   finally
     FWaiter.Free; 
