@@ -24,33 +24,39 @@ type
     //文件指针
     FMemName: string;
     //内存标识
-    FPerNum: Cardinal;
+    FCellNum: Cardinal;
     //单元个数
-    FPerSize: Cardinal;
+    FCellSize: Cardinal;
     //单元大小
-    FPerIndex: Cardinal;
+    FCellIndex: Cardinal;
     //单元索引
     FSyncLock: THandle;
     //同步锁定
   protected
     procedure ClearAllHandle;
     //清理句柄
+    function GetMemSize: Cardinal;
+    //计算内存
+    function GetMemValid: Boolean;
+    //内存有效
     procedure MemoryLock(const nLock: Boolean; nHandle: THandle = 0);
     //同步锁定
   public
     constructor Create;
     destructor Destroy; override;
     //创建释放
-    function InitMem(const nMemName,nLockName: string; const nPerNum,
-      nPerSize,nPerIndex: Cardinal; const nHost: Boolean = True): Boolean;
+    function InitMem(const nMemName,nLockName: string; const nCellNum,
+      nCellSize,nCellIndex: Cardinal; const nHost: Boolean = True): Boolean;
     //初始化
-    function LockData(var nBuf: Pointer; nPerIndex: Cardinal = 0): Boolean;
+    function LockData(var nBuf: Pointer; nCellIndex: Cardinal = 0): Boolean;
     procedure UnLockData;
     //读写内存
     property MemName: string read FMemName;
-    property PerNum: Cardinal read FPerNum;
-    property PerSize: Cardinal read FPerSize;
-    property PerIndex: Cardinal read FPerIndex;
+    property MemSize: Cardinal read GetMemSize;
+    property MemValid: Boolean read GetMemValid;
+    property CellNum: Cardinal read FCellNum;
+    property CellSize: Cardinal read FCellSize;
+    property CellIndex: Cardinal read FCellIndex write FCellIndex;
     //属性相关
   end;
 
@@ -109,11 +115,27 @@ begin
   end;
 end;
 
+//Date: 2012-2-22
+//Desc: 计算共享内存大小
+function TShareMemoryManager.GetMemSize: Cardinal;
+begin
+  if Assigned(FFilePtr) then
+       Result := FCellNum * FCellSize
+  else Result := 0;
+end;
+
+//Date: 2012-2-22
+//Desc: 内存是否有效
+function TShareMemoryManager.GetMemValid: Boolean;
+begin
+  Result := Assigned(FFilePtr);
+end;
+
 //Date: 2012-2-20
 //Parm: 内存名称;同步锁名;单元数;单元大小;单元索引;是否宿主
 //Desc: 创建nMemName的共享内存.宿主申请内存空间,非宿主映射空间地址
 function TShareMemoryManager.InitMem(const nMemName,nLockName: string;
-  const nPerNum,nPerSize,nPerIndex: Cardinal; const nHost: Boolean): Boolean;
+  const nCellNum,nCellSize,nCellIndex: Cardinal; const nHost: Boolean): Boolean;
 begin
   Result := False;
   try
@@ -122,9 +144,9 @@ begin
     if FSyncLock = 0 then Exit;
 
     FMemName := nMemName;
-    FPerNum := nPerNum;
-    FPerSize := nPerSize;
-    FPerIndex := nPerIndex;
+    FCellNum := nCellNum;
+    FCellSize := nCellSize;
+    FCellIndex := nCellIndex;
 
     if nHost then
     begin
@@ -133,7 +155,7 @@ begin
                    nil,                            //安全属性
                    PAGE_READWRITE or SEC_COMMIT,   //操作模式
                    0,                              //内存大小(高位)
-                   FPerNum * FPerSize,             //内存大小(低位)
+                   FCellNum * FCellSize,             //内存大小(低位)
                    PChar(FMemName));               //内存名称标识
     end else
     begin
@@ -148,7 +170,7 @@ begin
                  FMapFile,                         //内存映射句柄
                  FILE_MAP_WRITE,                   //操作模式
                  0, 0,                             //映射起始位置
-                 FPerNum * FPerSize);              //映射内存大小
+                 FCellNum * FCellSize);            //映射内存大小
     //xxxxx
 
     if not Assigned(FFilePtr) then Exit;
@@ -187,16 +209,18 @@ end;
 
 //Date: 2012-2-20
 //Parm: 接收指针;单元索引
-//Desc: 返回索引为nPerIndex的单元起始位置指针
+//Desc: 返回索引为nCellIndex的单元起始位置指针
 function TShareMemoryManager.LockData(var nBuf: Pointer;
-  nPerIndex: Cardinal): Boolean;
+  nCellIndex: Cardinal): Boolean;
 begin
+  nBuf := nil;
   MemoryLock(True);
-  if nPerIndex < 1 then nPerIndex := FPerIndex;
-  Result := Assigned(FFilePtr) and (nPerIndex > 0) and (nPerIndex <= FPerNum);
+
+  if nCellIndex < 1 then nCellIndex := FCellIndex;
+  Result := Assigned(FFilePtr) and (nCellIndex > 0) and (nCellIndex <= FCellNum);
 
   if Result then
-    nBuf := Pointer(Cardinal(FFilePtr) + FPerSize * (nPerIndex - 1));
+    nBuf := Pointer(Cardinal(FFilePtr) + FCellSize * (nCellIndex - 1));
   //fix buffer position
 end;
 
