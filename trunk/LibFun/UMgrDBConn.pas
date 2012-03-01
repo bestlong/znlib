@@ -14,25 +14,27 @@ unit UMgrDBConn;
 interface
 
 uses
-  ActiveX, Windows, Classes, ADODB, DB, SysUtils, SyncObjs, UWaitItem,
-  UMgrHashDict;
+  ActiveX, ADODB, Classes, DB, Windows, SysUtils, SyncObjs, UMgrHashDict,
+  UWaitItem, USysLoger;
 
 const
   cErr_GetConn_NoParam     = $0001;            //无连接参数
   cErr_GetConn_NoAllowed   = $0002;            //阻止申请
   cErr_GetConn_Closing     = $0003;            //连接正断开
   cErr_GetConn_MaxConn     = $0005;            //最大连接数
+  cErr_GetConn_BuildFail   = $0006;            //构建失败
 
 type
   PDBParam = ^TDBParam;
   TDBParam = record
-    FID   : string;                             //参数标识
-    FHost : string;                             //主机地址
-    FPort : Integer;                            //服务端口
-    FDB   : string;                             //数据库名
-    FUser : string;                             //用户名
-    FPwd  : string;                             //用户密码
-    FConn : string;                             //连接字符
+    FID        : string;                             //参数标识
+    FHost      : string;                             //主机地址
+    FPort      : Integer;                            //服务端口
+    FDB        : string;                             //数据库名
+    FUser      : string;                             //用户名
+    FPwd       : string;                             //用户密码
+    FConn      : string;                             //连接字符
+    FNumWorker : Integer;                            //工作对象数
   end;
 
   PDBWorker = ^TDBWorker;
@@ -51,7 +53,7 @@ type
     FID   : string;                             //连接标识
     FUsed : Integer;                            //排队计数
     FLast : Cardinal;                           //上次使用
-    FWorker: array[0..2] of PDBWorker;          //工作对象
+    FWorker: array of PDBWorker;                //工作对象
   end;
 
   PDBConnStatus = ^TDBConnStatus;
@@ -61,12 +63,40 @@ type
     FNumConnObj: Integer;                       //连接对象(Connection)个数
     FNumObjConned: Integer;                     //已连接对象(Connection)个数
     FNumObjReUsed: Cardinal;                    //对象重复使用次数
+    FNumObjRequest: Cardinal;                   //连接请求总数
     FNumObjRequestErr: Cardinal;                //请求错误次数
     FNumObjWait: Integer;                       //排队中对象(Worker.FUsed)个数
     FNumWaitMax: Integer;                       //排队最多的组队列中对象个数
     FNumMaxTime: TDateTime;                     //排队最多时间
   end;
 
+  TDBConnManager = class;
+  TDBConnWorkderBuilder = class(TThread)
+  private
+    FOwner: TDBConnManager;
+    //拥有者
+    FWaiterInner: TWaitObject;
+    FWaiterOuter: TWaitObject;
+    //等待对象
+    FSyncLock: TCriticalSection;
+    //同步对象
+  protected
+    FWorker: PDBWorker;
+    //工作对象
+    FBuildResult: Boolean;
+    //创建结果
+    procedure Execute; override;
+    //线程体
+  public
+   constructor Create(AOwner: TDBConnManager);
+   destructor Destroy; override;
+   //创建释放
+   procedure StopMe;
+   //停止线程
+   function BuildWorker(const nWorker: PDBWorker): Boolean;
+   //构建对象
+   end;
+  
   TDBConnManager = class(TObject)
   private
     FMaxConn: Word;
@@ -79,6 +109,8 @@ type
     FAllowedRequest: Integer;
     FSyncLock: TCriticalSection;
     //同步锁
+    FBuilder: TDBConnWorkderBuilder;
+    //对象厂
     FStatus: TDBConnStatus;
     //运行状态
   protected
@@ -128,6 +160,139 @@ const
   cFalse = $1105;
   //常量定义
 
+resourcestring
+  sNoAllowedWhenRequest = '连接池对象释放时收到请求,已拒绝.';
+  sClosingWhenRequest   = '连接池对象关闭时收到请求,已拒绝.';
+  sNoParamWhenRequest   = '连接池对象收到请求,但无匹配参数.';
+  sBuildWorkerFailure   = '连接池对象创建DBWorker失败.';
+
+//------------------------------------------------------------------------------
+//Desc: 记录日志
+procedure WriteLog(const nMsg: string);
+begin
+  if Assigned(gSysLoger) then
+    gSysLoger.AddLog(TDBConnManager, '数据库连接池', nMsg);
+  //xxxxx
+end;
+
+constructor TDBConnWorkderBuilder.Create(AOwner: TDBConnManager);
+begin
+  inherited Create(False);
+  FreeOnTerminate := False;
+  FOwner := AOwner;
+
+  FWaiterInner := TWaitObject.Create;
+  FWaiterOuter := TWaitObject.Create;
+  FSyncLock := TCriticalSection.Create;
+end;
+
+destructor TDBConnWorkderBuilder.Destroy;
+begin
+  FreeAndNil(FWaiterInner);
+  FreeAndNil(FWaiterOuter);
+  FreeAndNil(FSyncLock);
+  inherited;
+end;
+
+//Desc: 停止线程
+procedure TDBConnWorkderBuilder.StopMe;
+begin
+  Terminate;
+  FWaiterInner.Wakeup;
+  FWaiterOuter.Wakeup;
+  
+  WaitFor;
+  Free;
+end;
+
+//Date: 2012-3-1
+//Parm: 工作对象
+//Desc: 创建nWorker对象的内容
+function TDBConnWorkderBuilder.BuildWorker(const nWorker: PDBWorker): Boolean;
+begin
+  with nWorker^ do
+    Result := Assigned(FConn) and Assigned(FQuery) and Assigned(FExec);
+  if Result then Exit;
+
+  FSyncLock.Enter;
+  try
+    FWorker := nWorker;
+    FWaiterInner.Wakeup;
+
+    FWaiterOuter.EnterWait;
+    Result := FBuildResult;
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
+//Date: 2012-3-1
+//Desc: 线程体
+procedure TDBConnWorkderBuilder.Execute;
+begin
+  CoInitializeEx(nil, COINIT_MULTITHREADED);
+  try
+    while not Terminated do
+    try
+      FBuildResult := False;
+      FWaiterInner.EnterWait;
+      if Terminated then Exit;
+
+      with FWorker^,FOwner do
+      begin
+        if not Assigned(FConn) then
+        begin
+          FConn := TADOConnection.Create(nil);
+          InterlockedIncrement(FStatus.FNumConnObj);
+
+          with FConn do
+          begin
+            ConnectionTimeout := 7;
+            LoginPrompt := False;
+            AfterConnect := DoAfterConnection;
+            AfterDisconnect := DoAfterDisconnection;
+          end;
+        end;
+
+        if not Assigned(FQuery) then
+        begin
+          FQuery := TADOQuery.Create(nil);
+          FQuery.Connection := FConn;
+        end;
+
+        if not Assigned(FExec) then
+        begin
+          FExec := TADOQuery.Create(nil);
+          FExec.Connection := FConn;
+        end;
+
+        if not Assigned(FWaiter) then
+        begin
+          FWaiter := TWaitObject.Create;
+          FWaiter.Interval := 2 * 10;
+        end;
+
+        if not Assigned(FLock) then
+          FLock := TCriticalSection.Create;
+        //xxxxx
+      end;
+
+      FBuildResult := True;
+      FWaiterOuter.Wakeup;
+    except
+      on E:Exception do
+      begin
+        FWaiterOuter.Wakeup;
+        WriteLog(E.Message);
+      end;
+    end;
+  finally
+    FWaiterOuter.Wakeup;
+    CoUninitialize;
+  end;
+end;
+
+//------------------------------------------------------------------------------
 constructor TDBConnManager.Create;
 begin
   FMaxConn := 100;
@@ -139,13 +304,17 @@ begin
   
   FParams := THashDictionary.Create(3);
   FParams.OnDataFree := DoFreeDict;
+  FBuilder := TDBConnWorkderBuilder.Create(Self);
 end;
 
 destructor TDBConnManager.Destroy;
 begin
-  ClearConnItems(True);  
+  ClearConnItems(True);
   FParams.Free;
   FSyncLock.Free;
+
+  FBuilder.StopMe;
+  FBuilder := nil;
   inherited;
 end;
 
@@ -197,7 +366,7 @@ begin
 
     if nFreeMe then
       FreeAndNil(FConnItems);
-    //xxxxx
+    FillChar(FStatus, SizeOf(FStatus), #0);
   finally
     FSyncLock.Leave;
   end;
@@ -267,13 +436,13 @@ end;
 //Desc: 数据连接成功
 procedure TDBConnManager.DoAfterConnection(Sender: TObject);
 begin
-  Inc(FStatus.FNumObjConned);
+  InterlockedIncrement(FStatus.FNumObjConned);
 end;
 
 //Desc: 数据断开成功
 procedure TDBConnManager.DoAfterDisconnection(Sender: TObject);
 begin
-  Dec(FStatus.FNumObjConned);
+  InterlockedDecrement(FStatus.FNumObjConned);
 end;
 
 //------------------------------------------------------------------------------
@@ -308,16 +477,12 @@ begin
       Inc(FStatus.FNumConnParam);
     end else nPtr := nData.FData;
 
-    with nParam do
-    begin
-      nPtr.FID   := FID;
-      nPtr.FHost := FHost;
-      nPtr.FPort := FPort;
-      nPtr.FDB := FDB;
-      nPtr.FUser := FUser;
-      nPtr.FPwd  := FPwd;
-      nPtr.FConn := MakeDBConnection(nParam);
-    end;
+    nPtr^ := nParam;
+    nPtr.FConn := MakeDBConnection(nParam);
+
+    if nPtr.FNumWorker < 1 then
+      nPtr.FNumWorker := 3;
+    //xxxxx
   finally
     FSyncLock.Leave;
   end;
@@ -360,24 +525,48 @@ var nIdx: Integer;
 begin
   Result := nil;
   nErrCode := cErr_GetConn_NoAllowed;
-  if FAllowedRequest = cFalse then Exit;
+
+  if FAllowedRequest = cFalse then
+  begin
+    WriteLog(sNoAllowedWhenRequest);
+    Exit;
+  end;
 
   nErrCode := cErr_GetConn_Closing;
-  if FConnClosing = cTrue then Exit;
-  
+  if FConnClosing = cTrue then
+  begin
+    WriteLog(sClosingWhenRequest);
+    Exit;
+  end;
+
   FSyncLock.Enter;
   try
     nErrCode := cErr_GetConn_NoAllowed;
-    if FAllowedRequest = cFalse then Exit;
+    if FAllowedRequest = cFalse then
+    begin
+      WriteLog(sNoAllowedWhenRequest);
+      Exit;
+    end;
 
     nErrCode := cErr_GetConn_Closing;
-    if FConnClosing = cTrue then Exit;
+    if FConnClosing = cTrue then
+    begin
+      WriteLog(sClosingWhenRequest);
+      Exit;
+    end;
     //重复判定,避免Get和close锁定机制重叠(get.enter在close.enter后面进入等待)
 
+    Inc(FStatus.FNumObjRequest);
     nErrCode := cErr_GetConn_NoParam;
     nParam := FParams.FindItem(nID);
-    if not Assigned(nParam) then Exit;
+    
+    if not Assigned(nParam) then
+    begin
+      WriteLog(sNoParamWhenRequest);
+      Exit;
+    end;
 
+    //--------------------------------------------------------------------------
     nItem := nil;
     nIdle := nil;
 
@@ -406,11 +595,16 @@ begin
       begin
         nItem := nIdle;
         nItem.FID := nID;
+        nItem.FUsed := 1;
 
-        for nIdx:=Low(nItem.FWorker) to High(nItem.FWorker) do
-         if Assigned(nItem.FWorker[nIdx]) then
-          CloseWorkerConnection(nItem.Fworker[nIdx]);
-        Inc(FStatus.FNumObjReUsed);
+        try
+          for nIdx:=Low(nItem.FWorker) to High(nItem.FWorker) do
+           if Assigned(nItem.FWorker[nIdx]) then
+            CloseWorkerConnection(nItem.Fworker[nIdx]);
+          Inc(FStatus.FNumObjReUsed);
+        finally
+          nItem.FUsed := 0;
+        end;
       end else
       begin
         New(nItem);
@@ -419,7 +613,8 @@ begin
 
         nItem.FID := nID;
         nItem.FUsed := 0;
-        
+        SetLength(nItem.FWorker, PDBParam(nParam.FData).FNumWorker);
+
         for nIdx:=Low(nItem.FWorker) to High(nItem.FWorker) do
           nItem.FWorker[nIdx] := nil;
         //xxxxx
@@ -442,45 +637,28 @@ begin
           if FWorker[nIdx].FUsed < Result.FUsed then
           begin
             Result := FWorker[nIdx];
-          end;                
-          //排队最少的工作对象
+          end; //排队最少的工作对象
         end else
         begin
           New(Result);
           FWorker[nIdx] := Result;
           FillChar(Result^, SizeOf(TDBWorker), #0);
 
-          with Result^ do
-          begin
-            //ActiveX.CoInitialize(nil);
-            FConn := TADOConnection.Create(nil);
-            with FConn do
-            begin
-              ConnectionTimeout := 7;
-              LoginPrompt := False;
-              AfterConnect := DoAfterConnection;
-              AfterDisconnect := DoAfterDisconnection;
-            end;
-
-            FQuery := TADOQuery.Create(nil);
-            FQuery.Connection := FConn;
-            FExec := TADOQuery.Create(nil);
-            FExec.Connection := FConn;
-
-            FWaiter := TWaitObject.Create;
-            FWaiter.Interval := 2 * 10;
-
-            Inc(FStatus.FNumConnObj);
-            FLock := TCriticalSection.Create;
-          end;
-
           Break;
-          //新创建工作对象
-        end;
+        end; //新创建工作对象
       end;
 
       if Assigned(Result) then
       begin
+        if not FBuilder.BuildWorker(Result) then
+        begin
+          Result := nil;
+          nErrCode := cErr_GetConn_BuildFail;
+
+          WriteLog(sBuildWorkerFailure);
+          Exit;
+        end;
+
         Inc(Result.FUsed);
         Inc(nItem.FUsed);
         Inc(FStatus.FNumObjWait);
@@ -546,9 +724,9 @@ begin
         end;
       end;
     finally
+      Dec(nWorker.FUsed);
       nWorker.FLock.Leave;
-      InterlockedDecrement(FStatus.FNumObjWait);
-      InterlockedDecrement(nWorker.FUsed);
+      Dec(FStatus.FNumObjWait);
 
       if FConnClosing = cTrue then
         nWorker.FWaiter.Wakeup;
@@ -557,6 +735,7 @@ begin
   end;
 end;
 
+//------------------------------------------------------------------------------
 //Desc: 执行写操作语句
 function TDBConnManager.WorkerExec(const nWorker: PDBWorker;
   const nSQL: string): Integer;
@@ -594,9 +773,7 @@ begin
 end;
 
 initialization
-  CoInitializeEx(nil,COINIT_MULTITHREADED);
   gDBConnManager := TDBConnManager.Create;
 finalization
   FreeAndNil(gDBConnManager);
-  CoUninitialize;
 end.
