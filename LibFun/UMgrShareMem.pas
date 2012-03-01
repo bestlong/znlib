@@ -24,6 +24,8 @@ type
     //文件指针
     FMemName: string;
     //内存标识
+    FMemNew: Boolean;
+    //是否新建
     FCellNum: Cardinal;
     //单元个数
     FCellSize: Cardinal;
@@ -51,6 +53,7 @@ type
     function LockData(var nBuf: Pointer; nCellIndex: Cardinal = 0): Boolean;
     procedure UnLockData;
     //读写内存
+    property MemNew: Boolean read FMemNew;
     property MemName: string read FMemName;
     property MemSize: Cardinal read GetMemSize;
     property MemValid: Boolean read GetMemValid;
@@ -157,12 +160,14 @@ begin
                    0,                              //内存大小(高位)
                    FCellNum * FCellSize,             //内存大小(低位)
                    PChar(FMemName));               //内存名称标识
+      FMemNew := GetLastError <> ERROR_ALREADY_EXISTS;
     end else
     begin
       FMapFile := OpenFileMapping(
                    FILE_MAP_WRITE,                 //操作模式
                    True,                           //
                    PChar(FMemName));               //内存名称标识
+      FMemNew := False;
     end;
 
     if FMapFile = 0 then Exit;
