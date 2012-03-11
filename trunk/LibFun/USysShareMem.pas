@@ -107,7 +107,8 @@ type
 
   TProcessMonitorClient = class(TProcessMonitorBase)
   public
-    constructor Create(const nProgID,nMemName,nEventName: string);
+    constructor Create(const nProgID: string; nMemName: string = '';
+      nEventName: string = '');
     //创建对象
   end;
 
@@ -676,13 +677,16 @@ begin
 end;
 
 //Desc: 标准客户端
-constructor TProcessMonitorClient.Create(const nProgID,nMemName,
+constructor TProcessMonitorClient.Create(const nProgID: string; nMemName,
   nEventName: string);
 begin
   inherited Create;
   FType := ptClient;
   FClientID := nProgID;
+
   FInterval := 500;
+  if nMemName = '' then nMemName := sPM_BaseMemName;
+  if nEventName = '' then nEventName := sPM_BaseEventName;
 
   FShareMem.InitMem(
      nMemName,              //memory name

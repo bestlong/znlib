@@ -34,6 +34,8 @@ type
     FUser      : string;                             //用户名
     FPwd       : string;                             //用户密码
     FConn      : string;                             //连接字符
+    
+    FEnable    : Boolean;                            //启用参数
     FNumWorker : Integer;                            //工作对象数
   end;
 
@@ -234,8 +236,8 @@ begin
   try
     while not Terminated do
     try
-      FBuildResult := False;
       FWaiterInner.EnterWait;
+      FBuildResult := False;
       if Terminated then Exit;
 
       with FWorker^,FOwner do
@@ -712,6 +714,10 @@ begin
   begin
     FSyncLock.Enter;
     try
+      if nWorker.FQuery.Active then
+        nWorker.FQuery.Close;
+      //xxxxx
+      
       for nIdx:=FConnItems.Count - 1 downto 0 do
       begin
         nItem := FConnItems[nIdx];
