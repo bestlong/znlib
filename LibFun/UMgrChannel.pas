@@ -21,19 +21,19 @@ type
     FHttp: TROWinInetHTTPChannel;  //通道对象
   end;
 
-  TChannelArray = array of TChannelItem;
-  //通道组
-
   TChannelManager = class(TObject)
   private
-    FChannels: TChannelArray;
+    FChannels: TList;
     //通道列表
     FMaxCount: Integer;
     //通道峰值
     FLock: TCriticalSection;
     //同步锁
-    FClearing: Boolean;
-    //正在清理
+    FNumLocked: Integer;
+    //锁定个数
+    FFreeing: Integer;
+    FClearing: Integer;
+    //对象状态
   protected
     function GetCount: Integer;
     procedure SetChannelMax(const nValue: Integer);
@@ -58,16 +58,28 @@ var
 
 implementation
 
+const
+  cYes  = $0002;
+  cNo   = $0005;
+
 constructor TChannelManager.Create;
 begin
   FMaxCount := 5;
-  FClearing := False;
+  FNumLocked := 0;
+
+  FFreeing := cNo;
+  FClearing := cNo;
+  
+  FChannels := TList.Create;
   FLock := TCriticalSection.Create;
 end;
 
 destructor TChannelManager.Destroy;
 begin
+  InterlockedExchange(FFreeing, cYes);
   ClearChannel;
+  FChannels.Free;
+
   FLock.Free;
   inherited;
 end;
@@ -75,31 +87,39 @@ end;
 //Desc: 清理通道对象
 procedure TChannelManager.ClearChannel;
 var nIdx: Integer;
+    nItem: PChannelItem;
 begin
+  InterlockedExchange(FClearing, cYes);
+  //set clear flag
+
   FLock.Enter;
   try
-    FClearing := True;
-
-    for nIdx:=Low(FChannels) to High(FChannels) do
-    with FChannels[nIdx] do
-    begin
-      if FUsed then
-      try
-        FLock.Leave;
-
-        while FUsed do Sleep(1);
-      finally
-        FLock.Enter;
-      end;  
-
-      if Assigned(FHttp) then FreeAndNil(FHttp);
-      if Assigned(FMsg) then FreeAndNil(FMsg);  
-      if Assigned(FChannel) then FChannel := nil;
+    if FNumLocked > 0 then
+    try
+      FLock.Leave;
+      while FNumLocked > 0 do
+        Sleep(1);
+      //wait for relese
+    finally
+      FLock.Enter;
     end;
 
-    SetLength(FChannels, 0);
+    for nIdx:=FChannels.Count - 1 downto 0 do
+    begin
+      nItem := FChannels[nIdx];
+      FChannels.Delete(nIdx);
+
+      with nItem^ do
+      begin
+        if Assigned(FHttp) then FreeAndNil(FHttp);
+        if Assigned(FMsg) then FreeAndNil(FMsg);
+
+        if Assigned(FChannel) then FChannel := nil;
+        Dispose(nItem);
+      end;
+    end;
   finally
-    FClearing := False;
+    InterlockedExchange(FClearing, cNo);
     FLock.Leave;
   end;
 end;
@@ -108,7 +128,7 @@ end;
 function TChannelManager.GetCount: Integer;
 begin
   FLock.Enter;
-  Result := Length(FChannels);
+  Result := FChannels.Count;
   FLock.Leave;
 end;
 
@@ -123,38 +143,47 @@ end;
 //Desc: 锁定通道
 function TChannelManager.LockChannel(const nType: Integer): PChannelItem;
 var nIdx,nFit: Integer;
+    nItem: PChannelItem;
 begin
-  Result := nil;
+  Result := nil; 
+  if FFreeing = cYes then Exit;
+  if FClearing = cYes then Exit;
+
   FLock.Enter;
   try
-    if FClearing then Exit;
+    if FFreeing = cYes then Exit;
+    if FClearing = cYes then Exit;
     nFit := -1;
 
-    for nIdx:=Low(FChannels) to High(FChannels) do
-    with FChannels[nIdx] do
+    for nIdx:=0 to FChannels.Count - 1 do
     begin
-      if FUsed then Continue;
+      nItem := FChannels[nIdx];
+      if nItem.FUsed then Continue;
 
-      if (nType > -1) and (FType = nType) then
+      with nItem^ do
       begin
-        Result := @FChannels[nIdx];
-        Exit;
+        if (nType > -1) and (FType = nType) then
+        begin
+          Result := nItem;
+          Exit;
+        end;
+
+        if nFit < 0 then
+          nFit := nIdx;
+        //first idle
+
+        if nType < 0 then
+          Break;
+        //no check type
       end;
-
-      if nFit < 0 then
-        nFit := nIdx;
-      //第一个空闲通道
-
-      if nType < 0 then
-        Break;
-      //不检查通道类型
     end;
 
-    nIdx := Length(FChannels);
-    if nIdx < FMaxCount then
+    if FChannels.Count < FMaxCount then
     begin
-      SetLength(FChannels, nIdx + 1);
-      with FChannels[nIdx] do
+      New(nItem);
+      FChannels.Add(nItem);
+
+      with nItem^ do
       begin
         FType := nType;
         FChannel := nil;
@@ -163,19 +192,22 @@ begin
         FHttp := TROWinInetHTTPChannel.Create(nil);
       end;
 
-      Result := @FChannels[nIdx];
+      Result := nItem;
       Exit;
     end;
 
     if nFit > -1 then
     begin
-      Result := @FChannels[nFit];
+      Result := FChannels[nFit];
       Result.FType := nType;
       Result.FChannel := nil;
     end;
   finally
     if Assigned(Result) then
+    begin
       Result.FUsed := True;
+      InterlockedIncrement(FNumLocked);
+    end;
     FLock.Leave;
   end;
 end;
@@ -188,6 +220,7 @@ begin
     FLock.Enter;
     try
       nChannel.FUsed := False;
+      InterlockedDecrement(FNumLocked);
     finally
       FLock.Leave;
     end;
