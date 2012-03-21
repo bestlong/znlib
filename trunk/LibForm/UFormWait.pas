@@ -29,7 +29,8 @@ type
 //------------------------------------------------------------------------------
 procedure ShowWaitForm(const nMsg: string; const nShow: Boolean = True); overload;
 //非阻塞
-procedure ShowWaitForm(const nPForm: TForm; const nMsg: string = ''); overload;
+procedure ShowWaitForm(const nPForm: TForm; const nMsg: string = '';
+ const nRefresh: Boolean = True); overload;
 //阻塞模式
 procedure CloseWaitForm;
 //入口函数
@@ -74,10 +75,15 @@ var
 
 //------------------------------------------------------------------------------
 //Date: 2007-09-21
-//Parm: 父窗体;提示消息
+//Parm: 父窗体;提示消息;刷新
 //Desc: 在nPForm的中间显示一个等待窗体
-procedure ShowWaitForm(const nPForm: TForm; const nMsg: string = '');
+procedure ShowWaitForm(const nPForm: TForm; const nMsg: string;
+  const nRefresh: Boolean);
 begin
+  if nRefresh then
+    Application.ProcessMessages;
+  //update ui
+  
   if not Assigned(gThread) then
     gThread := TWaitThread.Create(nPForm);
   gThread.HintMsg := nMsg;
