@@ -30,6 +30,7 @@ type
     function PackerEncode(const nStr: string): string; overload;
     function PackerEncode(const nDT: TDateTime): string; overload;
     procedure PackerDecode(const nStr: string; var nValue: string); overload;
+    procedure PackerDecode(const nStr: string; var nValue: Integer); overload;
     procedure PackerDecode(const nStr: string; var nValue: Cardinal); overload;
     procedure PackerDecode(const nStr: string; var nValue: Int64); overload;
     procedure PackerDecode(const nStr: string; var nValue: Double); overload;
@@ -378,6 +379,15 @@ begin
   if FCodeEnable then
        nValue := PackerDecodeStr(nStr)
   else nValue := nStr;
+end;
+
+//Desc: 有符号整数
+procedure TBusinessPackerBase.PackerDecode(const nStr: string;
+ var nValue: Integer); 
+begin
+  if nStr = '' then
+       nValue := 0
+  else nValue := StrToInt(nStr)
 end;
 
 //Desc: 无符号整数

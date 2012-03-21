@@ -43,6 +43,7 @@ contains
   UTrayIcon in 'UTrayIcon.pas',
   UImageButton in 'UImageButton.pas',
   UGridPainter in 'UGridPainter.pas',
-  UGridExPainter in 'UGridExPainter.pas';
+  UGridExPainter in 'UGridExPainter.pas',
+  ULEDFont in 'ULEDFont.pas';
 
 end.
