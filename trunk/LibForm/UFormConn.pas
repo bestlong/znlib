@@ -12,14 +12,18 @@
     [DBConn]
     DBName=Access
     DBList=DB2 Oracle Access SQLServer
+
+    [Access]
+    DBType=1
+    DBMemo=isbk
     DBUser=sa
-    DBPwd=
-    DBPath=
+    DBPwd=c2E=
+    DBCatalog=HXDelivery
+    DBSource=127.0.0.1
+    DBPath=D:\MyWork\HX_Delivery\Bin\DL_Client\
     DBFile=$Path\HRMS.MDB
-    DBHost=asdf
-    DBPort=132
-    DBCatalog=rskq
-    DBSource=liu
+    DBHost=
+    DBPort=0
 
     [DBConnRes]
     ;$User=用户名 $Pwd=密码 $File=文件名 $Path=程序路径 $Host=主机名 $Port=端口
@@ -80,7 +84,7 @@ type
     { Private declarations }
     FCallBack: TConnTestCallBack;
     {*回调函数*}  
-    procedure LoadDataByType;
+    procedure LoadDataByType(const nDBName: string = '');
     {*载入数据*}
     function IsDataValidConn: Boolean;
     {*校验连接*}
@@ -91,7 +95,9 @@ type
 function ShowConnectDBSetupForm(const nCallBack: TConnTestCallBack): Boolean;
 function BuildConnectDBStr(const nParam: TStrings = nil;
  const nDBName: string = ''; const nFile: string = ''): string;
-function LoadConnecteDBConfig(const nList: TStrings; const nFile: string = ''): Boolean;
+function BuildFixedConnStr(const nMemo: string; nFullMatch: Boolean): string;
+function LoadConnecteDBConfig(const nList: TStrings; const nFile: string = '';
+ const nDBName: string = ''): Boolean;
 //入口函数
 
 ResourceString
@@ -112,8 +118,10 @@ ResourceString
 
   sConn_Key_LinkFile  = 'ConfigFile';                //跳转文件
   sConn_Key_PathValue = 'DBPath';                    //$Path变量值
-  sConn_Key_DBName    = 'DBName';                    //已选中数据库类型
-  sConn_Key_DBList    = 'DBList';                    //可选数据库类型
+  sConn_Key_DBType    = 'DBType';                    //数据库类型
+  sConn_Key_DBMemo    = 'DBMemo';                    //数据库描述
+  sConn_Key_DBName    = 'DBName';                    //已选中数据库名称
+  sConn_Key_DBList    = 'DBList';                    //可选数据库类名称
   sConn_Key_ConnStr   = 'DBConn';                    //连接字符串
   sConn_Key_User      = 'DBUser';
   sConn_Key_DBPwd     = 'DBPwd';
@@ -200,9 +208,9 @@ begin
 end;
 
 //Desc: 载入配置
-function LoadConnecteDBConfig(const nList: TStrings; const nFile: string = ''): Boolean;
-var nStr: string;
-    nIni: TIniFile;
+function LoadConnecteDBConfig(const nList: TStrings; const nFile,nDBName: string ): Boolean;
+var nIni: TIniFile;
+    nStr,nSection: string;
 begin
   Result := False;
   if nFile = '' then
@@ -221,34 +229,43 @@ begin
     end;
 
     nList.Clear;
-    nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBName, '');
-    nList.Add(sConn_Key_DBName + '=' + Trim(nStr));
-
     nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBList, '');
     nList.Add(sConn_Key_DBList + '=' + Trim(nStr));
-
-    nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_User, '');
-    nList.Add(sConn_Key_User + '=' + Trim(nStr));
-
-    nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBPwd, '');
-    nList.Add(sConn_Key_DBPwd + '=' + Trim(DecodeBase64(nStr)));
 
     nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_PathValue, '');
     nList.Add(sConn_Key_PathValue + '=' + Trim(nStr));
 
-    nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBFile, '');
+    if nDBName = '' then
+         nSection := Trim(nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBName, ''))
+    else nSection := nDBName;
+    nList.Add(sConn_Key_DBName + '=' + nSection);  
+
+    //--------------------------------------------------------------------------
+    nStr := nIni.ReadString(nSection, sConn_Key_DBType, '');
+    nList.Add(sConn_Key_DBType + '=' + Trim(nStr));
+
+    nStr := nIni.ReadString(nSection, sConn_Key_DBMemo, '');
+    nList.Add(sConn_Key_DBMemo + '=' + Trim(nStr));
+
+    nStr := nIni.ReadString(nSection, sConn_Key_User, '');
+    nList.Add(sConn_Key_User + '=' + Trim(nStr));
+
+    nStr := nIni.ReadString(nSection, sConn_Key_DBPwd, '');
+    nList.Add(sConn_Key_DBPwd + '=' + Trim(DecodeBase64(nStr)));
+
+    nStr := nIni.ReadString(nSection, sConn_Key_DBFile, '');
     nList.Add(sConn_Key_DBFile + '=' + Trim(nStr));
 
-    nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBHost, '');
+    nStr := nIni.ReadString(nSection, sConn_Key_DBHost, '');
     nList.Add(sConn_Key_DBHost + '=' + Trim(nStr));
 
-    nStr := IntToStr(nIni.ReadInteger(sConn_Sec_DBConn, sConn_Key_DBPort, 0));
+    nStr := IntToStr(nIni.ReadInteger(nSection, sConn_Key_DBPort, 0));
     nList.Add(sConn_Key_DBPort + '=' + nStr);
 
-    nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBCatalog, '');
+    nStr := nIni.ReadString(nSection, sConn_Key_DBCatalog, '');
     nList.Add(sConn_Key_DBCatalog + '=' + Trim(nStr));
 
-    nStr := nIni.ReadString(sConn_Sec_DBConn, sConn_Key_DBSource, '');
+    nStr := nIni.ReadString(nSection, sConn_Key_DBSource, '');
     nList.Add(sConn_Key_DBSource + '=' + Trim(nStr));
     Result := True;
   finally
@@ -306,6 +323,47 @@ begin
     Result := StringReplace(Result, sConn_Path, nStr, [rfReplaceAll, rfIgnoreCase]);
   finally
     if not Assigned(nParam) then nList.Free;
+  end;
+end;
+
+//Desc: 按指定备注构建数据库连接
+function BuildFixedConnStr(const nMemo: string; nFullMatch: Boolean): string;
+var nStr: string;
+    nIdx: Integer;
+    nListA,nListB: TStrings;
+begin   
+  nListA := TStringList.Create;
+  nListB := TStringList.Create;
+  try
+    Result := '';
+    LoadConnecteDBConfig(nListA);
+
+    nStr := nListA.Values[sConn_Key_DBList];
+    nListA.Text := StringReplace(nStr, ' ', #13#10, [rfReplaceAll]);
+
+    for nIdx:=0 to nListA.Count - 1 do
+    begin
+      LoadConnecteDBConfig(nListB, '', nListA[nIdx]);
+      nStr := nListB.Values[sConn_Key_DBMemo];
+
+      if nFullMatch then
+      begin
+        if LowerCase(nMemo) = LowerCase(nStr) then
+        begin
+          Result := BuildConnectDBStr(nListB);
+          Exit;
+        end;
+      end else
+
+      if Pos(LowerCase(nMemo), LowerCase(nStr)) > 0 then
+      begin
+        Result := BuildConnectDBStr(nListB);
+        Exit;
+      end;
+    end;
+  finally
+    nListB.Free;
+    nListA.Free;
   end;
 end;
 
@@ -371,6 +429,10 @@ begin
     begin
       if Enabled then Color := clInfoBk else Color := clWindow;
     end;
+
+  if ActiveControl = DBName then
+    LoadDataByType(DBName.Text);
+  //xxxxx
 end;
 
 //Desc: 测试连接
@@ -427,24 +489,29 @@ end;
 
 //------------------------------------------------------------------------------
 //Desc: 载入指定配置
-procedure TfFormConnDB.LoadDataByType;
+procedure TfFormConnDB.LoadDataByType(const nDBName: string);
 var nStr: string;
     nList: THashedStringList;
 begin
   nList := THashedStringList.Create;
   try
-    if not LoadConnecteDBConfig(nList) then Exit;
+    if not LoadConnecteDBConfig(nList, '', nDBName) then Exit;
     //load error
 
-    nStr := nList.Values[sConn_Key_DBList];
-    nStr := StringReplace(nStr, ' ', #13#10, [rfReplaceAll]);
+    if nDBName = '' then
+    begin
+      nStr := nList.Values[sConn_Key_DBList];
+      nStr := StringReplace(nStr, ' ', #13#10, [rfReplaceAll]);
+      DBName.Items.Text := nStr;
+    end;
 
-    DBName.Items.Text := nStr;
-    nStr := nList.Values[sConn_Key_DBName];
-
+    nStr := nList.Values[sConn_Key_DBName]; 
     DBName.ItemIndex := DBName.Items.IndexOf(nStr);
-    if DBName.ItemIndex > -1 then DBNameChange(nil);
 
+    if (nDBName = '') and (DBName.ItemIndex > -1) then
+      DBNameChange(nil);
+    //xxxxx
+    
     Edit_User.Text := nList.Values[sConn_Key_User];
     Edit_Pwd.Text := nList.Values[sConn_Key_DBPwd];
     Edit_File.Text := nList.Values[sConn_Key_DBFile];
@@ -511,22 +578,24 @@ end;
 
 //Desc: 保存
 procedure TfFormConnDB.BtnOKClick(Sender: TObject);
-var nStr: string;
-    nIni: TIniFile;
+var nIni: TIniFile;
+    nStr,nSection: string;
 begin
   if not IsDataValidConn then Exit;
   nIni := TIniFile.Create(gVariantManager.VarStr(sVar_ConnDBConfig));
   try
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBName, DBName.Text);
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_User, Edit_User.Text);
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBPwd, EncodeBase64(Edit_Pwd.Text));
+    nSection := Trim(DBName.Text);
+    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBName, nSection);
 
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBFile, Edit_File.Text);
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBHost, Edit_Host.Text);
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBPort, Edit_Port.Text);
+    nIni.WriteString(nSection, sConn_Key_User, Edit_User.Text);
+    nIni.WriteString(nSection, sConn_Key_DBPwd, EncodeBase64(Edit_Pwd.Text));
+
+    nIni.WriteString(nSection, sConn_Key_DBFile, Edit_File.Text);
+    nIni.WriteString(nSection, sConn_Key_DBHost, Edit_Host.Text);
+    nIni.WriteString(nSection, sConn_Key_DBPort, Edit_Port.Text);
     
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBCatalog, Edit_DB.Text);
-    nIni.WriteString(sConn_Sec_DBConn, sConn_Key_DBSource, Edit_DS.Text);
+    nIni.WriteString(nSection, sConn_Key_DBCatalog, Edit_DB.Text);
+    nIni.WriteString(nSection, sConn_Key_DBSource, Edit_DS.Text);
 
     if not gHasFileLinked then
     begin

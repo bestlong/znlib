@@ -30,7 +30,7 @@ type
 procedure ShowWaitForm(const nMsg: string; const nShow: Boolean = True); overload;
 //非阻塞
 procedure ShowWaitForm(const nPForm: TForm; const nMsg: string = '';
- const nRefresh: Boolean = True); overload;
+ const nRefresh: Boolean = False); overload;
 //阻塞模式
 procedure CloseWaitForm;
 //入口函数
