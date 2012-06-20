@@ -113,9 +113,9 @@ function Str2Date(const nStr: string): TDate;
 //change nStr to date value
 function Str2Time(const nStr: string): TTime;
 //change nStr to time value
-function Date2Str(const nDate: TDateTime): string;
+function Date2Str(const nDate: TDateTime; nSeparator: Boolean = True): string;
 //change nDate to string value
-function Time2Str(const nTime: TDateTime): string;
+function Time2Str(const nTime: TDateTime; nSeparator: Boolean = True): string;
 //change nTime to string value
 function DateTime2Str(const nDT: TDateTime): string;
 //change nDT to string value
@@ -947,15 +947,19 @@ end;
 
 //------------------------------------------------------------------------------ 
 //Desc: 日期转字符串
-function Date2Str(const nDate: TDateTime): string;
+function Date2Str(const nDate: TDateTime; nSeparator: Boolean): string;
 begin
-  Result := FormatDateTime('YYYY-MM-DD', nDate);
+  if nSeparator then
+       Result := FormatDateTime('YYYY-MM-DD', nDate)
+  else Result := FormatDateTime('YYYYMMDD', nDate);
 end;
 
 //Desc: 时间转字符串
-function Time2Str(const nTime: TDateTime): string;
+function Time2Str(const nTime: TDateTime; nSeparator: Boolean): string;
 begin
-  Result := FormatDateTime('HH:MM:SS', nTime);
+  if nSeparator then
+       Result := FormatDateTime('HH:MM:SS', nTime)
+  else Result := FormatDateTime('HHMMSS', nTime);
 end;
 
 //Desc: 日期转字符串

@@ -35,8 +35,9 @@ type
   TSQLFieldType = (sfStr, sfVal, sfDate, sfTime);
   //string, date, time, value
 
-function SF(const nField,nValue: string; const nType: TSQLFieldType = sfStr): string;
-//make sql field                        
+function SF(const nField: string; const nValue: Variant;
+ const nType: TSQLFieldType = sfStr): string;
+//make sql field
 function IsStrInList(const nList: TStrings; const nStr: string;
  const nFrom: integer = 0; nTo: integer = -1): Boolean;
 //check if nStr is in nList
@@ -723,7 +724,8 @@ end;
 //Date: 2011-6-30
 //Parm: 字段;值;类型
 //Desc: 构建MakeSQLByStr所需的数据
-function SF(const nField,nValue: string; const nType: TSQLFieldType): string;
+function SF(const nField: string; const nValue: Variant;
+ const nType: TSQLFieldType): string;
 begin
   case nType of
    sfStr: Result := Format('%s=''%s''', [nField, nValue]);

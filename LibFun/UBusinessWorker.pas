@@ -38,6 +38,15 @@ type
     //执行业务
   end;
 
+  TBusinessWorkerSweetHeart = class(TBusinessWorkerBase)
+  public
+    class function FunctionName: string; override;
+    function DoWork(var nData: string): Boolean; override;
+    //执行业务
+    class procedure RegWorker(const nSrvURL: string);
+    //注册对象
+  end;
+
   TBusinessWorkerClass = class of TBusinessWorkerBase;
   //class type
 
@@ -77,6 +86,30 @@ const
   cYes  = $0002;
   cNo   = $0005;
 
+var
+  gLocalServiceURL: string;
+  //本地服务地址列表
+
+class function TBusinessWorkerSweetHeart.FunctionName: string;
+begin
+  Result := sSys_SweetHeart;
+end;
+
+function TBusinessWorkerSweetHeart.DoWork(var nData: string): Boolean;
+begin
+  nData := PackerEncodeStr(gLocalServiceURL);
+  Result := True;
+end;
+
+class procedure TBusinessWorkerSweetHeart.RegWorker(const nSrvURL: string);
+begin
+  gLocalServiceURL := nSrvURL;
+  if Assigned(gBusinessWorkerManager) then
+    gBusinessWorkerManager.RegisteWorker(TBusinessWorkerSweetHeart);
+  //registe
+end;
+
+//------------------------------------------------------------------------------
 constructor TBusinessWorkerManager.Create;
 begin
   FNumLocked := 0;

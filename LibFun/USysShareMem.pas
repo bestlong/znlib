@@ -492,7 +492,9 @@ begin
     with PPMDataBase(nP)^ do
     if CompareStr(nProgID, FProgID) = 0 then
     begin
+      FStatus := nInit;
       UpdateData(nP);
+      
       Result := True;
       Exit;
     end;

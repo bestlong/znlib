@@ -29,7 +29,9 @@ type
     //子类实现
     function PackerEncode(const nStr: string): string; overload;
     function PackerEncode(const nDT: TDateTime): string; overload;
+    function PackerEncode(const nVal: Boolean): string; overload;
     procedure PackerDecode(const nStr: string; var nValue: string); overload;
+    procedure PackerDecode(const nStr: string; var nValue: Boolean); overload;
     procedure PackerDecode(const nStr: string; var nValue: Integer); overload;
     procedure PackerDecode(const nStr: string; var nValue: Cardinal); overload;
     procedure PackerDecode(const nStr: string; var nValue: Int64); overload;
@@ -45,7 +47,8 @@ type
     //创建释放
     class function PackerName: string; virtual;
     //函数名
-    procedure InitData(const nData: Pointer; const nIn: Boolean);
+    procedure InitData(const nData: Pointer; const nIn: Boolean;
+      const nSub: Boolean = True; const nBase: Boolean = True);
     //初始化
     function PackIn(const nData: Pointer; nCode: Boolean = True): string;
     procedure UnPackIn(const nStr: string; const nData: Pointer;
@@ -255,26 +258,33 @@ begin
 end;
 
 //Date: 2012-3-14
-//Parm: 参数;是否入参
-//Desc: 初始化nData数据
-procedure TBusinessPackerBase.InitData(const nData: Pointer; const nIn: Boolean);
+//Parm: 参数;入参;子类;基类
+//Desc: 按需求初始化nData数据
+procedure TBusinessPackerBase.InitData(const nData: Pointer;
+ const nIn,nSub,nBase: Boolean);
+var nBW: TBWDataBase;
 begin
-  with PBWDataBase(nData)^ do
+  if nBase then
   begin
-    FFrom.FTime := Now;
-    FFrom.FKpLong := 0;
+    FillChar(nBW, SizeOf(nBW), #0);
+    nBW.FMsgNO := PBWDataBase(nData).FMsgNO;
+    PBWDataBase(nData)^ := nBW;
 
-    FVia.FTime := Now;
-    FVia.FKpLong := 0;
-
-    FFinal.FTime := Now;
-    FFinal.FKpLong := 0;
-    FResult := False;
+    with PBWDataBase(nData)^ do
+    begin
+      FFrom.FTime := Now;
+      FVia.FTime := Now;
+      FFinal.FTime := Now;
+      FResult := False;
+    end;
   end;
 
-  if nIn then
-       DoInitIn(nData)
-  else DoInitOut(nData);
+  if nSub then
+  begin
+    if nIn then
+         DoInitIn(nData)
+    else DoInitOut(nData);
+  end;
 end;
 
 //Date: 2012-3-7
@@ -358,6 +368,7 @@ begin
   else Result := nStr;
 end;
 
+//Desc: 日期型
 function TBusinessPackerBase.PackerEncode(const nDT: TDateTime): string;
 begin
   try
@@ -365,6 +376,14 @@ begin
   except
     Result := DateTime2Str(Now);
   end;
+end;
+
+//Desc: 布尔型
+function TBusinessPackerBase.PackerEncode(const nVal: Boolean): string;
+begin
+  if nVal then
+       Result := 'Y'
+  else Result := 'N';
 end;
 
 //Desc: 字符串
@@ -379,6 +398,13 @@ begin
   if FCodeEnable then
        nValue := PackerDecodeStr(nStr)
   else nValue := nStr;
+end;
+
+//Desc: 布尔型
+procedure TBusinessPackerBase.PackerDecode(const nStr: string;
+ var nValue: Boolean);
+begin
+  nValue := nStr = 'Y';
 end;
 
 //Desc: 有符号整数
