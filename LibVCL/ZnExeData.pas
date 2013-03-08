@@ -13,7 +13,8 @@ uses
   Windows, Classes, ComObj, ExtCtrls, Messages, SysUtils;
 
 type
-  TOnData = procedure (const nData: string) of object;
+  TOnDataEvent = procedure (const nData: string) of object;
+  TOnDataProcedure = procedure (const nData: string);
   //收到数据
 
   TZnPostData = class(TComponent)
@@ -29,24 +30,31 @@ type
     //计数器
     FData: string;
     //待发送数据
-    FOnData: TOnData;
+    FOnData: TOnDataEvent;
     FOnEnd: TNotifyEvent;
     FOnTimeout: TNotifyEvent;
+    FOnData2: TOnDataProcedure;
     //事件
   protected
     procedure WndProc(var nMsg: TMessage);
     procedure DoOnTimer(Sender: TObject);
     procedure SetMsgStr(const nStr: string);
-  published
+  public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    //创建释放
     procedure SendData(const nData: string);
-
+    //发送数据
+    property OnDataProc: TOnDataProcedure read FOnData2 write FOnData2;
+    //事件相关
+  published
     property MsgStr: string read FMsgStr write SetMsgStr;
     property Timeout: integer read FNum write FNum;
-    property OnData: TOnData read FOnData write FOnData;
+    //属性相关
+    property OnData: TOnDataEvent read FOnData write FOnData;
     property OnDataEnd: TNotifyEvent read FOnEnd write FOnEnd;
     property OnTimeout: TNotifyEvent read FOnTimeout write FOnTimeout;
+    //事件相关
   end;
 
 procedure Register;
@@ -114,7 +122,7 @@ begin
   FTimer.Tag := 0;
 
   FTimer.Enabled := True;
-  SendMessage(HWND_BROADCAST, FMsgID, FHwnd, cSender);
+  PostMessage(HWND_BROADCAST, FMsgID, FHwnd, cSender);
 end;
 
 procedure TZnPostData.WndProc(var nMsg: TMessage);
@@ -153,7 +161,9 @@ begin
     nBuf := TCopyDataStruct((Pointer(nMsg.LParam))^);
     FData := StrPas(nBuf.lpData);
     SetLength(FData, nBuf.cbData);
+
     if Assigned(FOnData) then FOnData(FData);
+    if Assigned(FOnData2) then FOnData2(FData);
     {------------------------ +Dmzn: 2007-01-24 --------------------
     备注: 接收方收到数据,回执发送发并触发事件.
     高位参数WParam中放置发送端句柄,作为身份识别的标志

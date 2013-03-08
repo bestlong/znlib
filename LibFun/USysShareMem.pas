@@ -11,7 +11,7 @@ unit USysShareMem;
 interface
 
 uses
-  Windows, Classes, SysUtils, Messages, UMgrShareMem, USAPConnection;
+  Windows, Classes, SysUtils, Messages, UMgrShareMem;
 
 const
   cPM_ProgID_Size      = 15;  //pm=Process monitor
@@ -40,7 +40,7 @@ type
   PPMDataSapMIT = ^TPMDataSapMIT;
   TPMDataSapMIT = record
     FBase: TPMDataBase;                                    //基础数据
-    FSAPConnStatus: TSAPConnStatus;                        //连接状态
+    //FSAPConnStatus: TSAPConnStatus;                      //连接状态
   end;
 
   TPMRunCounter = record
@@ -785,9 +785,9 @@ begin
 
   if (GetTickCount - FLastUpdate) > nVal * FKeepInterval then
   begin
-    if Assigned(gSAPConnectionManager) then
+    {if Assigned(gSAPConnectionManager) then
       PPMDataSapMIT(nData).FSAPConnStatus := gSAPConnectionManager.Status;
-    FLastUpdate := GetTickCount;
+    FLastUpdate := GetTickCount;}
   end;
 end;
 
