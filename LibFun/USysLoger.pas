@@ -178,9 +178,12 @@ begin
       nItem := nLogs[i];
 
       nStr := DateTime2Str(nItem.FTime) + sLogField +        //时间
-              nItem.FWriter.FOjbect.ClassName + sLogField +  //类名
-              nItem.FWriter.FDesc + sLogField +              //描述
-              nItem.FEvent;                                  //事件
+              nItem.FWriter.FOjbect.ClassName + sLogField;   //类名
+      //xxxxx
+      
+      if nItem.FWriter.FDesc <> '' then
+        nStr := nStr + nItem.FWriter.FDesc + sLogField;      //描述
+      nStr := nStr + nItem.FEvent;                           //事件
       WriteLn(nFile, nStr);
 
       if FSyncLog then
