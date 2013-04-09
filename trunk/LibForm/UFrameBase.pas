@@ -59,7 +59,8 @@ type
     {*创建释放*}
     procedure Close(const nEvent: Boolean = True);
     {*关闭*}
-    function DealCommand(Sender: TObject; const nCmd: integer): integer; virtual;
+    function DealCommand(Sender: TObject; const nCmd: Integer;
+     const nParamA: Pointer; const nParamB: Integer): Integer; virtual;
     {*处理命令*}
     class function GetCtrlParentForm(const nCtrl: TWinControl): TForm;
     {*获取窗体*}
@@ -77,7 +78,8 @@ type
 
 function CreateBaseFrameItem(const nFrameID: Integer; const nParent: TWinControl;
  const nAlign: TAlign = alClient; const nPopedom: string = ''): TfFrameBase;
-function BroadcastFrameCommand(Sender: TObject; const nCmd:integer): integer;
+function BroadcastFrameCommand(Sender: TObject; const nCmd:integer;
+ const nParamA: Pointer = nil; const nParamB: Integer = -1): integer;
 //入口函数
 
 implementation
@@ -87,7 +89,8 @@ uses
   UMgrControl;
 
 //Desc: 将命令广播给所有的Frame类
-function BroadcastFrameCommand(Sender: TObject; const nCmd:integer): integer;
+function BroadcastFrameCommand(Sender: TObject; const nCmd:integer;
+ const nParamA: Pointer; const nParamB: Integer): integer;
 var nList: TList;
     i,nCount: integer;
 begin
@@ -99,7 +102,8 @@ begin
     nCount := nList.Count - 1;
     for i:=0 to nCount do
      if TObject(nList[i]) is TfFrameBase then
-      Result := Result + TfFrameBase(nList[i]).DealCommand(Sender, nCmd);
+      Result := Result + TfFrameBase(nList[i]).DealCommand(Sender, nCmd,
+       nParamA, nParamB);
     //broadcast command and combine then result
   finally
     nList.Free;
@@ -332,7 +336,8 @@ begin
 end;
 
 //Desc: 处理命令
-function TfFrameBase.DealCommand(Sender: TObject; const nCmd: integer): integer;
+function TfFrameBase.DealCommand(Sender: TObject; const nCmd: integer;
+  const nParamA: Pointer; const nParamB: Integer): integer;
 begin
   Result := -1;
 end;

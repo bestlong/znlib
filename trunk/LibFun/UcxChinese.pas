@@ -613,8 +613,8 @@ begin
   // date
   cxSetResourceString(@cxSDatePopupClear, '清除');
   ////'Clear');
-  cxSetResourceString(@cxSDatePopupNow, 'Now');
-  cxSetResourceString(@cxSDatePopupOK, 'OK');
+  cxSetResourceString(@cxSDatePopupNow, '现在');
+  cxSetResourceString(@cxSDatePopupOK, '确定');
   cxSetResourceString(@cxSDatePopupToday, '今天');
   ////'Today');
   cxSetResourceString(@cxSDateError, '非法日期');
