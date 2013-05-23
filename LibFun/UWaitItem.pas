@@ -40,6 +40,21 @@ type
     property Interval: Cardinal read FInterval write FInterval;
   end;
 
+  TCrossProcWaitObject = class(TObject)
+  private
+    FEvent: THandle;
+    {*同步事件*}
+    FLockStatus: Boolean;
+    {*锁定状态*}
+  public
+    constructor Create(const nEventName: PChar);
+    destructor Destroy; override;
+    {*创建释放*}
+    function SyncLockEnter(const nWaitFor: Boolean = False): Boolean;
+    procedure SyncLockLeave(const nOnlyMe: Boolean = True);
+    {*同步操作*}
+  end;
+
   TWaitTimer = class(TObject)
   private
     FFrequency: Int64;
@@ -76,11 +91,16 @@ begin
 
   FInterval := INFINITE;
   FEvent := CreateEvent(nil, False, False, nil);
+
+  if FEvent = 0 then
+    raise Exception.Create('Create TCrossProcWaitObject.FEvent Failure');
+  //xxxxx
 end;
 
 destructor TWaitObject.Destroy;
 begin
-  CloseHandle(FEvent);
+  if FEvent > 0 then
+    CloseHandle(FEvent);
   inherited;
 end;
 
@@ -117,6 +137,69 @@ begin
   if FStatus = cIsWaiting then
     SetEvent(FEvent);
   //do only waiting
+end;
+
+//------------------------------------------------------------------------------
+constructor TCrossProcWaitObject.Create(const nEventName: PChar);
+var nStr: string;
+begin
+  if nEventName = nil then
+    raise Exception.Create('TCrossProcWaitObject must have event name.');
+  //xxxxx
+
+  inherited Create;
+  FLockStatus := False;
+  FEvent := CreateEvent(nil, False, True, nEventName);
+
+  if FEvent = 0 then
+  begin
+    nStr := 'Create TCrossProcWaitObject.FSyncEvent Failure.';
+    if GetLastError = ERROR_INVALID_HANDLE then
+    begin
+      nStr := nStr + #13#10#13#10 +
+              'The name of an existing semaphore,mutex,or file-mapping object.';
+      //xxxxx
+    end;
+
+    raise Exception.Create(nStr);
+  end;
+end;
+
+destructor TCrossProcWaitObject.Destroy;
+begin
+  if FEvent > 0 then
+    CloseHandle(FEvent);
+  inherited;
+end;
+
+//Date: 2013-5-23
+//Parm: 等待信号
+//Desc: 锁定同步信号量,锁定成功返回True
+function TCrossProcWaitObject.SyncLockEnter(const nWaitFor: Boolean): Boolean;
+begin
+  if nWaitFor then
+       Result := WaitForSingleObject(FEvent, INFINITE) = WAIT_OBJECT_0
+  else Result := WaitForSingleObject(FEvent, 0) = WAIT_OBJECT_0;
+  {*
+    a.FEvent初始状态为True.
+    b.首次WaitFor返回WAIT_OBJECT_0,锁定成功.
+    c.FEvent复位方式为False,WaitFor调用成功后自动置为"无信号".
+    d.其它WaitFor都会返回WAIT_TIMEOUT,锁定失败.
+    e.LockRelease后,解锁.
+  *}
+
+  FLockStatus := Result;
+  {*是否本对象锁定*}
+end;
+
+//Date: 2013-5-23
+//Parm: 只解锁本对象锁定信号
+//Desc: 解锁同步信号
+procedure TCrossProcWaitObject.SyncLockLeave(const nOnlyMe: Boolean);
+begin
+  if (not nOnlyMe) or FLockStatus then
+    SetEvent(FEvent);
+  //set event signal
 end;
 
 //------------------------------------------------------------------------------

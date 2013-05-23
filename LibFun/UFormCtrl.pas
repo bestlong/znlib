@@ -28,8 +28,8 @@ unit UFormCtrl;
 interface
 
 uses
-  Windows, Classes, ComCtrls, Controls, DB, Forms, SysUtils, TypInfo, UMgrVar,
-  ULibFun, ULibRes, UAdjustForm;
+  Windows, Classes, ComCtrls, Controls, DB, Forms, SysUtils, TypInfo, Variants,
+  UMgrVar, ULibFun, ULibRes, UAdjustForm;
 
 type
   TSQLFieldType = (sfStr, sfVal, sfDate, sfTime);
@@ -727,6 +727,13 @@ end;
 function SF(const nField: string; const nValue: Variant;
  const nType: TSQLFieldType): string;
 begin
+  if VarIsType(nValue, varDate) then
+  begin
+    Result := FormatDateTime('yyyy-mm-dd hh:nn:ss:zzz', nValue);
+    Result := Format('%s=''%s''', [nField, Result]);
+    Exit;
+  end;
+
   case nType of
    sfStr: Result := Format('%s=''%s''', [nField, nValue]);
    sfVal: Result := Format('%s=%s', [nField, nValue]);
