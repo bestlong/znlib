@@ -167,6 +167,9 @@ end;
 
 destructor TCrossProcWaitObject.Destroy;
 begin
+  SyncLockLeave(True);
+  //unlock
+  
   if FEvent > 0 then
     CloseHandle(FEvent);
   inherited;
