@@ -125,6 +125,8 @@ function Date2CH(const nDate: string): string;
 //change nDate to chinese string
 function Time2CH(const nTime: string): string;
 //change nTime to chinese string
+function Date2Week(nPrefix: string = ''; nDate: TDateTime = 0): string;
+//get the week of nDate
 
 implementation
 
@@ -1020,6 +1022,32 @@ begin
   if nLen > 1 then Result := Copy(nTime, 1, 2) + '时';
   if nLen > 3 then Result := Result + Copy(nTime, 3, 2) + '分';
   if nLen > 5 then Result := Result + Copy(nTime, 5, 2) + '秒';
+end;
+
+//Date: 2013-07-21
+//Parm: 前缀;日期
+//Desc: 获取nDate的周天描述
+function Date2Week(nPrefix: string; nDate: TDateTime): string;
+begin
+  if nDate = 0 then
+    nDate := Date();
+  //default is now
+
+  if nPrefix = '' then
+    nPrefix := '星期';
+  //default prefix
+
+  case DayOfWeek(nDate) of
+   1: Result := '天';
+   2: Result := '一';
+   3: Result := '二';
+   4: Result := '三';
+   5: Result := '四';
+   6: Result := '五';
+   7: Result := '六' else Result := '';
+  end;
+
+  Result := nPrefix + Result;
 end;
 
 initialization

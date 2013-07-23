@@ -12,7 +12,7 @@ unit USysLoger;
 interface
 
 uses
-  Windows, SysUtils, Classes, UMgrSync, UMgrLog, ULibFun;
+  Windows, SysUtils, Classes, UMgrSync, UMgrLog, ULibFun, UWaitItem;
 
 type
   TSysLogEvent = procedure (const nStr: string) of object;
@@ -28,14 +28,11 @@ type
     //同步对象
     FLoger: TLogManager;
     //日志对象
-    FSyncLock: THandle;
+    FSyncLock: TCrossProcWaitObject;
     //同步锁定
     FEvent: TSysLogEvent;
     //事件相关
   protected
-    procedure EnterLog;
-    procedure LeaveLog;
-    //同步日志
     procedure OnLog(const nThread: TLogThread; const nLogs: TList);
     procedure OnSync(const nData: Pointer; const nSize: Cardinal);
     procedure OnFree(const nData: Pointer; const nSize: Cardinal);
@@ -65,16 +62,8 @@ resourcestring
 //------------------------------------------------------------------------------
 constructor TSysLoger.Create(const nPath,nSyncLock: string);
 begin
-  FSyncLock := INVALID_HANDLE_VALUE;
-  if nSyncLock <> '' then
-  begin
-    FSyncLock := CreateEvent(nil, False, True, PChar(nSyncLock));
-    if FSyncLock = 0 then
-    begin
-      FSyncLock := INVALID_HANDLE_VALUE;
-      raise Exception.Create('Init SysLoger Failure');
-    end;
-  end;
+  FSyncLock := TCrossProcWaitObject.Create(PChar(nSyncLock));
+  //for thread or process sync
 
   FLoger := TLogManager.Create;
   FLoger.WriteEvent := OnLog;
@@ -94,11 +83,7 @@ begin
   FLoger.Free;
   FSyner.Free;
 
-  if FSyncLock <> INVALID_HANDLE_VALUE then
-  begin
-    CloseHandle(FSyncLock);
-    FSyncLock := INVALID_HANDLE_VALUE;
-  end;
+  FSyncLock.Free;
   inherited;
 end;
 
@@ -132,24 +117,6 @@ begin
   FLoger.AddNewLog(nItem);
 end;
 
-//Date: 2012-3-1
-//Desc: 开始记录日志
-procedure TSysLoger.EnterLog;
-begin
-  if FSyncLock <> INVALID_HANDLE_VALUE then
-    WaitForSingleObject(FSyncLock, INFINITE)
-  //xxxxx
-end;
-
-//Date: 2012-3-1
-//Desc: 结束记录日志
-procedure TSysLoger.LeaveLog;
-begin
-  if FSyncLock <> INVALID_HANDLE_VALUE then
-    SetEvent(FSyncLock);
-  //xxxxx
-end;
-
 //Date: 2012-2-13
 //Parm: 日志线程;日志列表
 //Desc: 将nThread.nLogs写入日志文件
@@ -160,7 +127,7 @@ var nStr: string;
     nItem: PLogItem;
     i,nCount,nLen,nNum: integer;
 begin
-  EnterLog;
+  FSyncLock.SyncLockEnter(True);
   try
     nStr := FPath + Date2Str(Now) + sFileExt;
     AssignFile(nFile, nStr);
@@ -202,7 +169,7 @@ begin
     //xxxxx
   finally  
     CloseFile(nFile);
-    LeaveLog;
+    FSyncLock.SyncLockLeave(True);
   end;
 end;
 
