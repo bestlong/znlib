@@ -65,6 +65,7 @@ type
     procedure Execute; override;
   public
     constructor Create(AOwner: TForm);
+    destructor Destroy; override;
     property HintMsg: string read FMsg write FMsg;
   end;
 
@@ -187,11 +188,16 @@ begin
       PaintText;
     end;
   end;
-
-  FImage.Free;
-  FCanvas.Free;
+  
   RedrawWindow(0, @FImageRect, 0, RDW_INVALIDATE or RDW_ALLCHILDREN);
   //«Â¿Ì∆¡ƒª
+end;
+
+destructor TWaitThread.Destroy;
+begin
+  FImage.Free;
+  FCanvas.Free;
+  inherited;
 end;
 
 //------------------------------------------------------------------------------
