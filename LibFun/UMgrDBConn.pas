@@ -128,6 +128,11 @@ type
     function WorkerQuery(const nWorker: PDBWorker; const nSQL: string): TDataSet;
     function WorkerExec(const nWorker: PDBWorker; const nSQL: string): Integer;
     //操作连接
+    function SQLQuery(const nID,nSQL: string; var nWorker: PDBWorker): TDataSet;
+    function ExecSQL(const nID, nSQL: string): Integer;
+    function ExecSQLs(const nID: string; const nSQLs: TStrings;
+     const nTrans: Boolean): Boolean;
+    //执行写操作
     property Status: TDBConnStatus read GetRunStatus;
     property MaxConn: Integer read GetMaxConn write SetMaxConn;
     //属性相关
@@ -774,6 +779,107 @@ begin
     Result := FStatus;
   finally
     FSyncLock.Leave;
+  end;
+end;
+
+//Date: 2013-07-26
+//Parm: 连接标识;语句;工作对象
+//Desc: 在nID数据库上执行nSQL查询,返回结果.需手动释放nWorker.
+function TDBConnManager.SQLQuery(const nID, nSQL: string;
+  var nWorker: PDBWorker): TDataSet;
+var nErrNum: Integer;
+begin
+  Result := nil;
+  nWorker := GetConnection(nID, nErrNum);
+
+  if not Assigned(nWorker) then
+  begin
+    WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
+    Exit;
+  end;
+
+  if not nWorker.FConn.Connected then
+    nWorker.FConn.Connected := True;
+  //conn db
+
+  Result := WorkerQuery(nWorker, nSQL);
+  //do query
+end;
+
+//Date: 2013-07-23
+//Parm: 连接标识;语句
+//Desc: 在nID数据库上执行nSQL语句
+function TDBConnManager.ExecSQL(const nID, nSQL: string): Integer;
+var nErrNum: Integer;
+    nDBConn: PDBWorker;
+begin
+  nDBConn := nil;
+  try
+    Result := -1;
+    nDBConn := GetConnection(nID, nErrNum);
+
+    if not Assigned(nDBConn) then
+    begin
+      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
+      Exit;
+    end;
+
+    if not nDBConn.FConn.Connected then
+      nDBConn.FConn.Connected := True;
+    //conn db
+
+    Result := WorkerExec(nDBConn, nSQL);
+    //do exec
+  finally
+    ReleaseConnection(nID, nDBConn);
+  end;
+end;
+
+//Date: 2013-07-23
+//Parm: 标识;语句列表;是否事务
+//Desc: 在nID数据库上执行nSQLs语句
+function TDBConnManager.ExecSQLs(const nID: string; const nSQLs: TStrings;
+  const nTrans: Boolean): Boolean;
+var nIdx: Integer;
+    nErrNum: Integer;
+    nDBConn: PDBWorker;
+begin
+  nDBConn := nil;
+  try
+    Result := False;
+    nDBConn := GetConnection(nID, nErrNum);
+
+    if not Assigned(nDBConn) then
+    begin
+      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
+      Exit;
+    end;
+
+    if not nDBConn.FConn.Connected then
+      nDBConn.FConn.Connected := True;
+    //conn db
+
+    if nTrans then
+      nDBConn.FConn.BeginTrans;
+    //trans
+    try
+      for nIdx:=0 to nSQLs.Count - 1 do
+        WorkerExec(nDBConn, nSQLs[nIdx]);
+      //execute sql list
+
+      if nTrans then
+        nDBConn.FConn.CommitTrans;
+      Result := True;
+    except
+      on E:Exception do
+      begin
+        if nTrans then
+          nDBConn.FConn.RollbackTrans;
+        WriteLog(E.Message);
+      end;
+    end;
+  finally
+    ReleaseConnection(nID, nDBConn);
   end;
 end;
 

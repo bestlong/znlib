@@ -32,7 +32,7 @@ uses
   UMgrVar, ULibFun, ULibRes, UAdjustForm;
 
 type
-  TSQLFieldType = (sfStr, sfVal, sfDate, sfTime);
+  TSQLFieldType = (sfStr, sfVal, sfDate, sfTime, sfDateTime);
   //string, date, time, value
 
 function SF(const nField: string; const nValue: Variant;
@@ -727,7 +727,7 @@ end;
 function SF(const nField: string; const nValue: Variant;
  const nType: TSQLFieldType): string;
 begin
-  if VarIsType(nValue, varDate) then
+  if nType = sfDateTime then
   begin
     Result := FormatDateTime('yyyy-mm-dd hh:nn:ss:zzz', nValue);
     Result := Format('%s=''%s''', [nField, Result]);
@@ -738,7 +738,8 @@ begin
    sfStr: Result := Format('%s=''%s''', [nField, nValue]);
    sfVal: Result := Format('%s=%s', [nField, nValue]);
    sfDate: Result := Format('%s=''%s''', [nField, Date2Str(Str2Date(nValue))]);
-   sfTime: Result := Format('%s=''%s''', [nField, Time2Str(Str2Time(nValue))]);
+   sfTime: Result := Format('%s=''%s''', [nField, Time2Str(Str2Time(nValue))])
+   else Result := '';
   end;
 end;
 
