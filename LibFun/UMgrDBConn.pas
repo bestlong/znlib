@@ -73,10 +73,17 @@ type
     FNumMaxTime: TDateTime;                     //排队最多时间
   end;
 
+  TDBActionCallback = function (const nWorker: PDBWorker;
+    const nData: Pointer): Boolean;
+  TDBActionCallbackObj = function (const nWorker: PDBWorker;
+    const nData: Pointer): Boolean of object;
+  //回调函数
+
   TDBConnManager = class(TObject)
   private
     FWorkers: TList;
     //工作对象
+    FConnDef: string;
     FConnItems: TList;
     //连接列表
     FParams: THashDictionary;
@@ -128,13 +135,20 @@ type
     function WorkerQuery(const nWorker: PDBWorker; const nSQL: string): TDataSet;
     function WorkerExec(const nWorker: PDBWorker; const nSQL: string): Integer;
     //操作连接
-    function SQLQuery(const nID,nSQL: string; var nWorker: PDBWorker): TDataSet;
-    function ExecSQL(const nID, nSQL: string): Integer;
-    function ExecSQLs(const nID: string; const nSQLs: TStrings;
-     const nTrans: Boolean): Boolean;
-    //执行写操作
+    function SQLQuery(const nSQL: string; var nWorker: PDBWorker;
+      nID: string = ''): TDataSet;
+    function ExecSQLs(const nSQLs: TStrings; const nTrans: Boolean;
+      nID: string = ''): Boolean;
+    function ExecSQL(const nSQL: string; nID: string = ''): Integer;
+    //读写操作
+    function DBAction(const nAction: TDBActionCallback;
+      const nData: Pointer = nil; nID: string = ''): Boolean; overload;
+    function DBAction(const nAction: TDBActionCallbackObj;
+      const nData: Pointer = nil; nID: string = ''): Boolean; overload;
+    //读写回调模式
     property Status: TDBConnStatus read GetRunStatus;
     property MaxConn: Integer read GetMaxConn write SetMaxConn;
+    property DefaultConnection: string read FConnDef write FConnDef;
     //属性相关
   end;
 
@@ -169,8 +183,10 @@ begin
   FConnClosing := cFalse;
   FAllowedRequest := cTrue;
 
-  FWorkers := TList.Create;
+  FConnDef := '';
   FConnItems := TList.Create;
+
+  FWorkers := TList.Create;
   FSyncLock := TCriticalSection.Create;
   
   FParams := THashDictionary.Create(3);
@@ -490,6 +506,10 @@ begin
     if nPtr.FNumWorker < 1 then
       nPtr.FNumWorker := 3;
     //xxxxx
+
+    if FConnDef = '' then
+      FConnDef := nParam.FID;
+    //first is default
   finally
     FSyncLock.Leave;
   end;
@@ -746,31 +766,6 @@ begin
 end;
 
 //------------------------------------------------------------------------------
-//Desc: 执行写操作语句
-function TDBConnManager.WorkerExec(const nWorker: PDBWorker;
-  const nSQL: string): Integer;
-begin
-  with nWorker^ do
-  begin
-    FExec.Close;
-    FExec.SQL.Text := nSQL;
-    Result := FExec.ExecSQL;
-  end;
-end;
-
-//Desc: 执行查询语句
-function TDBConnManager.WorkerQuery(const nWorker: PDBWorker;
-  const nSQL: string): TDataSet;
-begin
-  with nWorker^ do
-  begin
-    Result := FQuery;
-    FQuery.Close;
-    FQuery.SQL.Text := nSQL;
-    FQuery.Open;
-  end;
-end;
-
 //Desc: 读取运行状态
 function TDBConnManager.GetRunStatus: TDBConnStatus;
 begin
@@ -782,14 +777,113 @@ begin
   end;
 end;
 
+//Desc: 执行写操作语句
+function TDBConnManager.WorkerExec(const nWorker: PDBWorker;
+  const nSQL: string): Integer;
+var nStep: Integer;
+    nException: string;
+begin
+  Result := -1;
+  nException := '';
+  nStep := 0;
+
+  while nStep <= 2 do
+  try
+    if nStep = 1 then
+    begin
+      nWorker.FQuery.Close;
+      nWorker.FQuery.SQL.Text := 'select 1';
+      nWorker.FQuery.Open;
+
+      nWorker.FQuery.Close;
+      Break;
+      //connection is ok
+    end else
+
+    if nStep = 2 then
+    begin
+      nWorker.FConn.Close;
+      nWorker.FConn.Open;
+    end; //reconnnect
+           
+    nWorker.FExec.Close;
+    nWorker.FExec.SQL.Text := nSQL;
+    Result := nWorker.FExec.ExecSQL;
+
+    nException := '';
+    Break;
+  except
+    on E:Exception do
+    begin
+      Inc(nStep);
+      nException := E.Message;
+      WriteLog(E.ClassName);
+    end;
+  end;
+
+  if nException <> '' then
+    raise Exception.Create(nException);
+  //xxxxx
+end;
+
+//Desc: 执行查询语句
+function TDBConnManager.WorkerQuery(const nWorker: PDBWorker;
+  const nSQL: string): TDataSet;
+var nStep: Integer;
+    nException: string;
+begin
+  Result := nWorker.FQuery;
+  nException := '';
+  nStep := 0;
+
+  while nStep <= 2 do
+  try
+    if nStep = 1 then
+    begin
+      nWorker.FQuery.Close;
+      nWorker.FQuery.SQL.Text := 'select 1';
+      nWorker.FQuery.Open;
+
+      nWorker.FQuery.Close;
+      Break;
+      //connection is ok
+    end else
+
+    if nStep = 2 then
+    begin
+      nWorker.FConn.Close;
+      nWorker.FConn.Open;
+    end; //reconnnect
+    
+    nWorker.FQuery.Close;
+    nWorker.FQuery.SQL.Text := nSQL;
+    nWorker.FQuery.Open;
+
+    nException := '';
+    Break;
+  except
+    on E:Exception do
+    begin
+      Inc(nStep);
+      nException := E.Message;
+      WriteLog(E.ClassName);
+    end;
+  end;
+
+  if nException <> '' then
+    raise Exception.Create(nException);
+  //xxxxx
+end;
+
 //Date: 2013-07-26
-//Parm: 连接标识;语句;工作对象
+//Parm: 语句;工作对象;连接标识
 //Desc: 在nID数据库上执行nSQL查询,返回结果.需手动释放nWorker.
-function TDBConnManager.SQLQuery(const nID, nSQL: string;
-  var nWorker: PDBWorker): TDataSet;
+function TDBConnManager.SQLQuery(const nSQL: string; var nWorker: PDBWorker;
+  nID: string): TDataSet;
 var nErrNum: Integer;
 begin
   Result := nil;
+  if nID = '' then nID := FConnDef;
   nWorker := GetConnection(nID, nErrNum);
 
   if not Assigned(nWorker) then
@@ -807,15 +901,16 @@ begin
 end;
 
 //Date: 2013-07-23
-//Parm: 连接标识;语句
+//Parm: 语句;连接标识
 //Desc: 在nID数据库上执行nSQL语句
-function TDBConnManager.ExecSQL(const nID, nSQL: string): Integer;
+function TDBConnManager.ExecSQL(const nSQL: string; nID: string): Integer;
 var nErrNum: Integer;
     nDBConn: PDBWorker;
 begin
   nDBConn := nil;
   try
     Result := -1;
+    if nID = '' then nID := FConnDef;
     nDBConn := GetConnection(nID, nErrNum);
 
     if not Assigned(nDBConn) then
@@ -836,10 +931,10 @@ begin
 end;
 
 //Date: 2013-07-23
-//Parm: 标识;语句列表;是否事务
+//Parm: 语句列表;是否事务;连接标识
 //Desc: 在nID数据库上执行nSQLs语句
-function TDBConnManager.ExecSQLs(const nID: string; const nSQLs: TStrings;
-  const nTrans: Boolean): Boolean;
+function TDBConnManager.ExecSQLs(const nSQLs: TStrings; const nTrans: Boolean;
+  nID: string): Boolean;
 var nIdx: Integer;
     nErrNum: Integer;
     nDBConn: PDBWorker;
@@ -847,6 +942,7 @@ begin
   nDBConn := nil;
   try
     Result := False;
+    if nID = '' then nID := FConnDef;
     nDBConn := GetConnection(nID, nErrNum);
 
     if not Assigned(nDBConn) then
@@ -878,6 +974,68 @@ begin
         WriteLog(E.Message);
       end;
     end;
+  finally
+    ReleaseConnection(nID, nDBConn);
+  end;
+end;
+
+//Date: 2013-07-27
+//Parm: 动作;数据;连接标识
+//Desc: 在nID数据库上执行nAction定义的业务
+function TDBConnManager.DBAction(const nAction: TDBActionCallback;
+  const nData: Pointer; nID: string): Boolean;
+var nErrNum: Integer;
+    nDBConn: PDBWorker;
+begin
+  nDBConn := nil;
+  try
+    Result := False;
+    if nID = '' then nID := FConnDef;
+    nDBConn := GetConnection(nID, nErrNum);
+
+    if not Assigned(nDBConn) then
+    begin
+      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
+      Exit;
+    end;
+
+    if not nDBConn.FConn.Connected then
+      nDBConn.FConn.Connected := True;
+    //conn db
+
+    Result := nAction(nDBConn, nData);
+    //do action
+  finally
+    ReleaseConnection(nID, nDBConn);
+  end;
+end;
+
+//Date: 2013-07-27
+//Parm: 动作;连接标识
+//Desc: 在nID数据库上执行nAction定义的业务
+function TDBConnManager.DBAction(const nAction: TDBActionCallbackObj;
+  const nData: Pointer; nID: string): Boolean;
+var nErrNum: Integer;
+    nDBConn: PDBWorker;
+begin
+  nDBConn := nil;
+  try
+    Result := False;
+    if nID = '' then nID := FConnDef;
+    nDBConn := GetConnection(nID, nErrNum);
+
+    if not Assigned(nDBConn) then
+    begin
+      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
+      Exit;
+    end;
+
+    if not nDBConn.FConn.Connected then
+      nDBConn.FConn.Connected := True;
+    //conn db
+
+    Result := nAction(nDBConn, nData);
+    //do action
   finally
     ReleaseConnection(nID, nDBConn);
   end;
