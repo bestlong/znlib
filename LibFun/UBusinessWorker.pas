@@ -207,8 +207,8 @@ begin
     Result := GetWorker(nFunName);
     
     if not Assigned(Result) then
-      Result := GetWorker('');
-    //the default
+      raise Exception.Create(Format('Worker "%s" is invalid.', [nFunName]));
+    //xxxxx
   finally
     if Assigned(Result) then
       InterlockedIncrement(FNumLocked);

@@ -817,7 +817,7 @@ begin
     begin
       Inc(nStep);
       nException := E.Message;
-      WriteLog(E.ClassName);
+      WriteLog(nException);
     end;
   end;
 
@@ -866,7 +866,7 @@ begin
     begin
       Inc(nStep);
       nException := E.Message;
-      WriteLog(E.ClassName);
+      WriteLog(nException);
     end;
   end;
 

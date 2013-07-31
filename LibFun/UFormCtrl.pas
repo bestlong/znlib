@@ -726,6 +726,7 @@ end;
 //Desc: 构建MakeSQLByStr所需的数据
 function SF(const nField: string; const nValue: Variant;
  const nType: TSQLFieldType): string;
+var nVal: string;
 begin
   if nType = sfDateTime then
   begin
@@ -734,11 +735,19 @@ begin
     Exit;
   end;
 
+  nVal := VarToStr(nValue);
+  //convert type
+
   case nType of
-   sfStr: Result := Format('%s=''%s''', [nField, nValue]);
-   sfVal: Result := Format('%s=%s', [nField, nValue]);
-   sfDate: Result := Format('%s=''%s''', [nField, Date2Str(Str2Date(nValue))]);
-   sfTime: Result := Format('%s=''%s''', [nField, Time2Str(Str2Time(nValue))])
+   sfStr: Result := Format('%s=''%s''', [nField, nVal]);
+   sfDate: Result := Format('%s=''%s''', [nField, Date2Str(Str2Date(nVal))]);
+   sfTime: Result := Format('%s=''%s''', [nField, Time2Str(Str2Time(nVal))]);
+   sfVal:
+    begin
+      if nVal = '' then
+           Result := Format('%s=%d', [nField, 0])
+      else Result := Format('%s=%s', [nField, nVal]);
+    end
    else Result := '';
   end;
 end;
