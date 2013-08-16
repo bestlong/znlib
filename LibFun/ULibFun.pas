@@ -970,11 +970,25 @@ begin
   Result := FormatDateTime('yyyy-mm-dd hh:mm:ss', nDT);
 end;
 
+//Desc: 本地化格式
+function LocalDTSettings: TFormatSettings;
+begin
+  GetLocaleFormatSettings(LOCALE_SYSTEM_DEFAULT, Result);
+  //default settings
+
+  with Result do
+  begin
+    ShortDateFormat:='yyyy-MM-dd';
+    DateSeparator  :='-';
+    LongTimeFormat :='hh:mm:ss';
+    TimeSeparator  :=':';
+  end;
+end;
 //Desc: 转型为日期型
 function Str2DateTime(const nStr: string): TDateTime;
 begin
   try
-    Result := StrToDateTime(nStr);
+    Result := StrToDateTime(nStr, LocalDTSettings);
   except
     Result := Now;
   end;
@@ -984,7 +998,7 @@ end;
 function Str2Date(const nStr: string): TDate;
 begin
   try
-    Result := StrToDate(nStr);
+    Result := StrToDate(nStr, LocalDTSettings);
   except
     Result := Date;
   end;
@@ -994,7 +1008,7 @@ end;
 function Str2Time(const nStr: string): TTime;
 begin
   try
-    Result := StrToTime(nStr);
+    Result := StrToTime(nStr, LocalDTSettings);
   except
     Result := Time;
   end;
