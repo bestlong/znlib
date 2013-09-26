@@ -108,6 +108,8 @@ procedure AddVerifyData(const nFile,nSeed: string);
 //------------------------------------------------------------------------------
 function GetPinYinOfStr(const nChinese: string): string;
 //»ñÈ¡nChineseµÄÆ´Òô¼òÐ´
+function MirrorStr(const nStr: WideString): WideString;
+//¾µÏñ·´×ªnStr×Ö·û´®
 
 function Str2Date(const nStr: string): TDate;
 //change nStr to date value
@@ -945,6 +947,20 @@ begin
   if nIdx = nLen then
     Result := Result + nChinese[nIdx];
   Result := LowerCase(Result);
+end;
+
+//Date: 2013-09-26
+//Parm: ×Ö·û´®
+//Desc: ½«nStr¾µÏñ·´×ª
+function MirrorStr(const nStr: WideString): WideString;
+var i,nLen: Integer;
+begin
+  nLen := Length(nStr);
+  SetLength(Result, nLen);
+
+  for i:=1 to nLen do
+    Result[i] := nStr[nLen - i + 1];
+  //convert
 end;
 
 //------------------------------------------------------------------------------ 
