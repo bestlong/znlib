@@ -106,7 +106,7 @@ procedure AddVerifyData(const nFile,nSeed: string);
 //为nFile添加校验信息
 
 //------------------------------------------------------------------------------
-function GetPinYinOfStr(const nChinese: string): string;
+function GetPinYinOfStr(const nChinese: WideString): string;
 //获取nChinese的拼音简写
 function MirrorStr(const nStr: WideString): WideString;
 //镜像反转nStr字符串
@@ -916,36 +916,45 @@ begin
    end;
 end;
 
+//Desc: 拼音有效字符(可见字符)
+function PYValidChar(const nChar: Char): Boolean;
+begin
+  Result := (Ord(nChar) >= Ord(' ')) and (Ord(nChar) <= Ord('~'));
+end;
+
 //Desc: 获取nChinese的拼音简写
-function GetPinYinOfStr(const nChinese: string): string;
+function GetPinYinOfStr(const nChinese: WideString): string;
 var nChar: Char;
+    nStr: string;
     nIdx,nLen: integer;
     nArray: array[0..1] of Char;
 begin
   Result := '';
-  nLen := Length(nChinese);
+  nIdx := 0;
+  nLen := Length(nChinese); 
 
-  nIdx := 1;
   while nIdx < nLen do
   begin
-    if nChinese[nIdx] < #160 then
+    Inc(nIdx);
+    nStr := nChinese[nIdx];
+    
+    if Length(nStr) < 2 then
     begin
-      Result := Result + nChinese[nIdx];
-      Inc(nIdx);
+      if PYValidChar(nStr[1]) then
+        Result := Result + nStr;
+      //xxxxx
     end else
     begin
-      nArray[0] := nChinese[nIdx];
-      nArray[1] := nChinese[nIdx + 1];
+      nArray[0] := nStr[1];
+      nArray[1] := nStr[2];
 
       nChar := HZ2PY(nArray);
-      if nChar <> #0 then
+      if PYValidChar(nChar) then
         Result := Result + nChar;
-      Inc(nIdx, 2);
+      //xxxxx
     end;
   end;
 
-  if nIdx = nLen then
-    Result := Result + nChinese[nIdx];
   Result := LowerCase(Result);
 end;
 
