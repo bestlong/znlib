@@ -49,6 +49,7 @@ type
     FWaiter: TWaitObject;                       //延迟对象
     FUsed : Integer;                            //排队计数
     FLock : TCriticalSection;                   //同步锁定
+    FConnItem: Pointer;                         //所属连接项(专用)
   end;
 
   PDBConnItem = ^TDBConnItem;
@@ -125,10 +126,11 @@ type
     procedure DelParam(const nID: string = '');
     procedure ClearParam;
     //参数管理
+    function GetConnectionStr(const nID: string): string;
     class function MakeDBConnection(const nParam: TDBParam): string;
-    //创建连接
+    //连接字符串
     function GetConnection(const nID: string; var nErrCode: Integer): PDBWorker;
-    procedure ReleaseConnection(const nID: string; const nWorker: PDBWorker);
+    procedure ReleaseConnection(const nWorker: PDBWorker);
     //使用连接
     function Disconnection(const nID: string = ''): Integer;
     //断开连接
@@ -540,6 +542,24 @@ begin
   end;
 end;
 
+//Desc: 获取nID参数的连接字符串
+function TDBConnManager.GetConnectionStr(const nID: string): string;
+var nPtr: PDBParam;
+    nData: PDictData;
+begin
+  FSyncLock.Enter;
+  try
+    nData := FParams.FindItem(nID);
+    if Assigned(nData) then
+    begin
+      nPtr := nData.FData;
+      Result := nPtr.FConn;
+    end else Result := '';
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
 //------------------------------------------------------------------------------
 //Date: 2011-10-23
 //Parm: 连接标识;错误码
@@ -690,7 +710,7 @@ begin
 
         if not Result.FConn.Connected then
           Result.FConn.ConnectionString := PDBParam(nParam.FData).FConn;
-        //xxxxx
+        Result.FConnItem := nItem;
       end;
     end;
   finally
@@ -723,45 +743,42 @@ begin
 end;
 
 //Date: 2011-10-23
-//Parm: 连接标识;数据对象
-//Desc: 释放nID.nWorker连接对象
-procedure TDBConnManager.ReleaseConnection(const nID: string;
-  const nWorker: PDBWorker);
-var nIdx: Integer;
-    nItem: PDBConnItem;
+//Parm: 数据对象
+//Desc: 释放nWorker连接对象
+procedure TDBConnManager.ReleaseConnection(const nWorker: PDBWorker);
+var nItem: PDBConnItem;
 begin
-  if Assigned(nWorker) then
-  begin
-    FSyncLock.Enter;
+  if not Assigned(nWorker) then Exit;
+  //invalid worker to release
+
+  FSyncLock.Enter;
+  try
     try
       if nWorker.FQuery.Active then
         nWorker.FQuery.Close;
       //xxxxx
-      
-      for nIdx:=FConnItems.Count - 1 downto 0 do
+    except
+      on E:Exception do
       begin
-        nItem := FConnItems[nIdx];
-
-        if CompareText(nItem.FID, nID) = 0 then
-        begin
-          Dec(nItem.FUsed);
-          nItem.FLast := GetTickCount;
-          Break;
-        end;
+        WriteLog(E.Message);
       end;
-    finally
-      Dec(nWorker.FUsed);
-      nWorker.FLock.Leave;
-      Dec(FStatus.FNumObjWait);
-
-      if FConnClosing = cTrue then
-        nWorker.FWaiter.Wakeup;
-      //xxxxx
-
-      CoUnInitialize;
-      //释放COM对象
-      FSyncLock.Leave;
     end;
+
+    nItem := nWorker.FConnItem;
+    Dec(nItem.FUsed);
+    nItem.FLast := GetTickCount;
+
+    Dec(nWorker.FUsed);
+    nWorker.FLock.Leave;
+    Dec(FStatus.FNumObjWait);
+
+    if FConnClosing = cTrue then
+      nWorker.FWaiter.Wakeup;
+    //xxxxx
+  finally
+    CoUnInitialize;
+    //释放COM对象
+    FSyncLock.Leave;
   end;
 end;
 
@@ -882,14 +899,15 @@ function TDBConnManager.SQLQuery(const nSQL: string; var nWorker: PDBWorker;
   nID: string): TDataSet;
 var nErrNum: Integer;
 begin
-  Result := nil;
-  if nID = '' then nID := FConnDef;
+  if nID = '' then
+    nID := FConnDef;
   nWorker := GetConnection(nID, nErrNum);
 
   if not Assigned(nWorker) then
   begin
-    WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
-    Exit;
+    nID := Format('连接[ %s ]数据库失败(ErrCode: %d).', [nID, nErrNum]);
+    WriteLog(nID);
+    raise Exception.Create(nID);
   end;
 
   if not nWorker.FConn.Connected then
@@ -915,8 +933,9 @@ begin
 
     if not Assigned(nDBConn) then
     begin
-      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
-      Exit;
+      nID := Format('连接[ %s ]数据库失败(ErrCode: %d).', [nID, nErrNum]);
+      WriteLog(nID);
+      raise Exception.Create(nID);
     end;
 
     if not nDBConn.FConn.Connected then
@@ -926,7 +945,7 @@ begin
     Result := WorkerExec(nDBConn, nSQL);
     //do exec
   finally
-    ReleaseConnection(nID, nDBConn);
+    ReleaseConnection(nDBConn);
   end;
 end;
 
@@ -947,8 +966,9 @@ begin
 
     if not Assigned(nDBConn) then
     begin
-      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
-      Exit;
+      nID := Format('连接[ %s ]数据库失败(ErrCode: %d).', [nID, nErrNum]);
+      WriteLog(nID);
+      raise Exception.Create(nID);
     end;
 
     if not nDBConn.FConn.Connected then
@@ -975,7 +995,7 @@ begin
       end;
     end;
   finally
-    ReleaseConnection(nID, nDBConn);
+    ReleaseConnection(nDBConn);
   end;
 end;
 
@@ -995,8 +1015,9 @@ begin
 
     if not Assigned(nDBConn) then
     begin
-      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
-      Exit;
+      nID := Format('连接[ %s ]数据库失败(ErrCode: %d).', [nID, nErrNum]);
+      WriteLog(nID);
+      raise Exception.Create(nID);
     end;
 
     if not nDBConn.FConn.Connected then
@@ -1006,7 +1027,7 @@ begin
     Result := nAction(nDBConn, nData);
     //do action
   finally
-    ReleaseConnection(nID, nDBConn);
+    ReleaseConnection(nDBConn);
   end;
 end;
 
@@ -1026,8 +1047,9 @@ begin
 
     if not Assigned(nDBConn) then
     begin
-      WriteLog(Format('连接[ %s ]数据库失败(DBConn Is Null).', [nID]));
-      Exit;
+      nID := Format('连接[ %s ]数据库失败(ErrCode: %d).', [nID, nErrNum]);
+      WriteLog(nID);
+      raise Exception.Create(nID);
     end;
 
     if not nDBConn.FConn.Connected then
@@ -1037,7 +1059,7 @@ begin
     Result := nAction(nDBConn, nData);
     //do action
   finally
-    ReleaseConnection(nID, nDBConn);
+    ReleaseConnection(nDBConn);
   end;
 end;
 
