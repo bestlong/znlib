@@ -18,6 +18,7 @@ type
   TControlItem = record
     FClass: TWinControlClass;       //类别
     FClassID: integer;              //标识
+    FGroupID: string;               //分组
     FInstance: TList;               //实例
   end;
 
@@ -27,20 +28,23 @@ type
 
   TControlManager = class(TObject)
   private
-    FCtrlList: array of TControlItem;
+    FCtrlList: TList;
     {*控件列表*}
-    FActiveItem: PControlItem;
-    {*活动控件*}
     FOnCtrlFree: TOnCtrlFree;
     {*释放事件*}
   protected
-    procedure ClearCtrlList;
+    procedure ClearCtrlList(const nFree: Boolean);
     {*清理列表*}
+    procedure DeleteItem(const nIdx: Integer; const nFreeInst: Boolean);
+    {*删除项*}
   public
     constructor Create;
     destructor Destroy; override;
     {*创建释放*}
-    procedure RegCtrl(const nClass: TWinControlClass; const nClassID: integer);
+    procedure RegCtrl(const nClass: TWinControlClass; const nClassID: integer;
+     const nGroupID: string = '');
+    procedure UnregCtrl(const nGroupID: string); overload;
+    procedure UnregCtrl(const nClassID: Integer); overload;
     {*注册控件*}
     function NewCtrl(const nClassID: integer; const nOwner: TComponent;
       var nIndex: integer): TWinControl;
@@ -60,6 +64,8 @@ type
     {*检索实例*}
     function IsInstanceExists(const nClassID: integer): Boolean;
     {*实例存在*}
+    procedure MoveTo(const nManager: TControlManager);
+    {*转移数据*}
     property OnCtrlFree: TOnCtrlFree read FOnCtrlFree write FOnCtrlFree;
     {*属性*}
   end;
@@ -73,43 +79,107 @@ implementation
 constructor TControlManager.Create;
 begin
   inherited;
-  FActiveItem := nil;
-  SetLength(FCtrlList, 0);
+  FCtrlList := TList.Create;
 end;
 
 destructor TControlManager.Destroy;
 begin
-  ClearCtrlList;
+  ClearCtrlList(True);
   inherited;
 end;
 
-//Desc: 清空控件列表
-procedure TControlManager.ClearCtrlList;
-var nIdx,nNum: integer;
+//Date: 2013-11-24
+//Parm: 索引;释放实例
+//Desc: 删除控件列表中索引为nIdx的项
+procedure TControlManager.DeleteItem(const nIdx: Integer;
+ const nFreeInst: Boolean);
+var i: Integer;
+    nItem: PControlItem;
 begin
-  nNum := High(FCtrlList);
-  for nIdx:=Low(FCtrlList) to nNum do
-   if Assigned(FCtrlList[nIdx].FInstance) then FCtrlList[nIdx].FInstance.Free;
+  nItem := FCtrlList[nIdx];
+  if Assigned(nItem.FInstance) then
+  begin
+    if nFreeInst then
+    begin
+      for i:=nItem.FInstance.Count - 1 downto 0 do
+      begin
+        if Assigned(nItem.FInstance[i]) then
+          TWinControl(nItem.FInstance[i]).Free;
+        nItem.FInstance.Delete(i);
+      end;
+    end;
 
-  SetLength(FCtrlList, 0);
-  FActiveItem := nil;
+    FreeAndNil(nItem.FInstance);
+  end;
+
+  Dispose(nItem);
+  FCtrlList.Delete(nIdx);
+end;
+
+//Desc: 清空控件列表
+procedure TControlManager.ClearCtrlList(const nFree: Boolean);
+var nIdx: integer;
+begin
+  for nIdx:=FCtrlList.Count - 1 downto 0 do
+    DeleteItem(nIdx, False);
+  //xxxxx
+  
+  if nFree then
+    FreeAndNil(FCtrlList);
+  //xxxxx
 end;
 
 //Date: 2008-8-6
-//Parm: 类型;标识
+//Parm: 类型;标识;分组
 //Desc: 注册一个标识为nClassID的类
 procedure TControlManager.RegCtrl(const nClass: TWinControlClass;
-  const nClassID: integer);
-var nLen: integer;
+  const nClassID: integer; const nGroupID: string);
+var nItem: PControlItem;
 begin
   if not Assigned(GetCtrl(nClassID))then
   begin
-    nLen := Length(FCtrlList);
-    SetLength(FCtrlList, nLen + 1);
+    New(nItem);
+    FCtrlList.Add(nItem);
 
-    FCtrlList[nLen].FClass := nClass;
-    FCtrlList[nLen].FClassID := nClassID;
-    FCtrlList[nLen].FInstance := nil;
+    with nItem^ do
+    begin
+      FClass := nClass;
+      FClassID := nClassID;
+      FGroupID := nGroupID;
+      FInstance := nil;
+    end;
+  end;
+end;
+
+//Date: 2013-11-24
+//Parm: 分组标识
+//Desc: 卸载分组标识为nGroupID的控件
+procedure TControlManager.UnregCtrl(const nGroupID: string);
+var nIdx: Integer;
+    nItem: PControlItem;
+begin
+  for nIdx:=FCtrlList.Count - 1 downto 0 do
+  begin
+    nItem := FCtrlList[nIdx];
+    if nItem.FGroupID = nGroupID then
+      DeleteItem(nIdx, True);
+    //xxxxx
+  end;
+end;
+
+//Date: 2013-11-24
+//Parm: 类标识
+//Desc: 卸载类标识为nClassID的控件
+procedure TControlManager.UnregCtrl(const nClassID: Integer);
+var nIdx: Integer;
+    nItem: PControlItem;
+begin
+  for nIdx:=FCtrlList.Count - 1 downto 0 do
+  begin
+    nItem := FCtrlList[nIdx];
+    if nItem.FClassID = nClassID then
+      DeleteItem(nIdx, True);
+    //xxxxx
   end;
 end;
 
@@ -136,28 +206,28 @@ end;
 //Desc: 释放当前注册的所有类的实例
 procedure TControlManager.FreeAllCtrl(const nFree: Boolean);
 var nNext: Boolean;
-    m,nLen: integer;
-    i,nCount: integer;
-    nItem: TControlItem;
+    i,nIdx: integer;
+    nItem: PControlItem;
 begin
-  nLen := High(FCtrlList);
-  for m:=Low(FCtrlList) to nLen do
+  for nIdx:=FCtrlList.Count - 1 downto 0 do
   begin
-    nItem := FCtrlList[m];
-    if not Assigned(nItem.FInstance) then Continue;
-    nCount := nItem.FInstance.Count - 1;
-
-    for i:=0 to nCount do
-    if Assigned(nItem.FInstance[i]) then
+    nItem := FCtrlList[nIdx];
+    if Assigned(nItem.FInstance) then
     begin
-      nNext := True;
-      if Assigned(FOnCtrlFree) then
-        FOnCtrlFree(nItem.FClassID, nItem.FInstance[i], nNext);
-      if not nNext then Continue;
+      for i:=nItem.FInstance.Count - 1 downto 0 do
+      begin
+        if not Assigned(nItem.FInstance[i]) then Continue;
+        //filter
 
-      if nFree then
-        TWinControl(nItem.FInstance[i]).Free;
-      nItem.FInstance[i] := nil;
+        nNext := True;
+        if Assigned(FOnCtrlFree) then
+          FOnCtrlFree(nItem.FClassID, nItem.FInstance[i], nNext);
+        if not nNext then Continue;
+
+        if nFree then
+          TWinControl(nItem.FInstance[i]).Free;
+        nItem.FInstance[i] := nil;
+      end;
     end;
   end;
 end;
@@ -166,18 +236,18 @@ end;
 //Parm: 标记
 //Desc: 返回标记为nClassID的控件
 function TControlManager.GetCtrl(const nClassID: integer): PControlItem;
-var nIdx,nNum: integer;
+var nIdx: integer;
+    nItem: PControlItem;
 begin
   Result := nil;
-  if Assigned(FActiveItem) and (FActiveItem.FClassID = nClassID) then
-    Result := FActiveItem else
+
+  for nIdx:=FCtrlList.Count - 1 downto 0 do
   begin
-    nNum := High(FCtrlList);
-    for nIdx:=Low(FCtrlList) to nNum do
-    if FCtrlList[nIdx].FClassID = nClassID then
+    nItem := FCtrlList[nIdx];
+    if nItem.FClassID = nClassID then
     begin
-      Result := @FCtrlList[nIdx];
-      FActiveItem := Result; Break;
+      Result := nItem;
+      Break;
     end;
   end;
 end;
@@ -186,13 +256,11 @@ end;
 //Parm: 列表
 //Desc: 枚举当前注册的所有控件,放入nList中
 function TControlManager.GetCtrls(const nList: TList): Boolean;
-var nIdx,nNum: integer;
+var nIdx: integer;
 begin
   nList.Clear;
-  nNum := High(FCtrlList);
-
-  for nIdx:=Low(FCtrlList) to nNum do
-    nList.Add(@FCtrlList[nIdx]);
+  for nIdx:=0 to FCtrlList.Count-1 do
+    nList.Add(FCtrlList[nIdx]);
   Result := nList.Count > 0;
 end;
             
@@ -217,7 +285,7 @@ end;
 //Desc: 获取标识为nClassID类型的所有实例,存入nList中
 function TControlManager.GetInstances(const nClassID: integer;
   const nList: TList): Boolean;
-var i,nCount: integer;
+var nIdx: integer;
     nItem: PControlItem;
 begin
   nList.Clear;
@@ -225,9 +293,10 @@ begin
 
   if Assigned(nItem) and Assigned(nItem.FInstance) then
   begin
-    nCount := nItem.FInstance.Count - 1;
-    for i:=0 to nCount do
-    if Assigned(nItem.FInstance[i]) then nList.Add(nItem.FInstance[i]);
+    for nIdx:=0 to nItem.FInstance.Count - 1 do
+     if Assigned(nItem.FInstance[nIdx]) then
+      nList.Add(nItem.FInstance[nIdx]);
+    //xxxxx
   end;
 
   Result := nList.Count > 0;
@@ -237,19 +306,20 @@ end;
 //Parm: 列表
 //Desc: 检索当前已注册的所有类的所有实例
 function TControlManager.GetAllInstance(const nList: TList): Boolean;
-var i,nCount: integer;
-    nIdx,nNum: integer;
+var i,nIdx: integer;
+    nItem: PControlItem;
 begin
   nList.Clear;
-  nNum := High(FCtrlList);
-
-  for nIdx:=Low(FCtrlList) to nNum do
-  if Assigned(FCtrlList[nIdx].FInstance) then
+  for nIdx:=0 to FCtrlList.Count-1 do
   begin
-    nCount := FCtrlList[nIdx].FInstance.Count - 1;
-    for i:=0 to nCount do
-     if Assigned(FCtrlList[nIdx].FInstance[i]) then
-       nList.Add(FCtrlList[nIdx].FInstance[i]);
+    nItem := FCtrlList[nIdx];
+    if Assigned(nItem.FInstance) then
+    begin
+      for i:=0 to nItem.FInstance.Count-1 do
+       if Assigned(nItem.FInstance[i]) then
+        nList.Add(nItem.FInstance[i]);
+      //xxxxx
+    end;
   end;
 
   Result := nList.Count > 0;
@@ -276,8 +346,8 @@ begin
 
   nItem := GetCtrl(nClassID);
   if not Assigned(nItem) then Exit;
-
   Result := nItem.FClass.Create(nOwner);
+  
   if Assigned(nItem.FInstance) then
   begin
     nCount := nItem.FInstance.Count - 1;
@@ -313,6 +383,17 @@ begin
       Result.Align := nAlign;
     end;
   end;
+end;
+
+//Date: 2013-11-24
+//Parm: 管理器实例
+//Desc: 将当前已注册的控件列表转移到nManager中
+procedure TControlManager.MoveTo(const nManager: TControlManager);
+var nIdx: Integer;
+begin
+  for nIdx:=0 to FCtrlList.Count - 1 do
+    nManager.FCtrlList.Add(FCtrlList[nIdx]);
+  FCtrlList.Clear;
 end;
 
 initialization

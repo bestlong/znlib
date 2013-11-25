@@ -7,8 +7,15 @@ unit UBusinessWorker;
 interface
 
 uses
-  Windows, Classes, SyncObjs, SysUtils, ULibFun, USysLoger, UBusinessPacker,
-  UBusinessConst;
+  Windows, Classes, SyncObjs, SysUtils, ULibFun, USysLoger, UObjectList,
+  UBusinessPacker;
+
+const
+  {*worker action code*}
+  cWorker_GetPackerName       = $0010;
+  cWorker_GetSAPName          = $0011;
+  cWorker_GetRFCName          = $0012;
+  cWorker_GetMITName          = $0015;
 
 type
   TBusinessWorkerBase = class(TObject)
@@ -52,9 +59,9 @@ type
 
   TBusinessWorkerManager = class(TObject)
   private
-    FWorkerClass: array of TBusinessWorkerClass;
+    FWorkerClass: TObjectDataList;
     //类列表
-    FWorkerPool: array of TBusinessWorkerBase;
+    FWorkerPool: TObjectDataList;
     //对象池
     FNumLocked: Integer;
     //锁定对象
@@ -69,16 +76,23 @@ type
     constructor Create;
     destructor Destroy; override;
     //创建释放
-    procedure RegisteWorker(const nWorker: TBusinessWorkerClass);
+    procedure RegisteWorker(const nWorker: TBusinessWorkerClass;
+      const nWorkerID: string = '');
+    procedure UnRegistePacker(const nWorkerID: string);
     //注册类
     function LockWorker(const nFunName: string): TBusinessWorkerBase;
-    procedure RelaseWorkder(const nWorkder: TBusinessWorkerBase);
+    procedure RelaseWorker(const nWorkder: TBusinessWorkerBase);
     //锁定释放
+    procedure MoveTo(const nManager: TBusinessWorkerManager);
+    //移动数据
   end;
 
 var
   gBusinessWorkerManager: TBusinessWorkerManager = nil;
   //全局使用
+
+Resourcestring
+  sSys_SweetHeart = 'Sys_SweetHeart';       //心跳指令
 
 implementation
 
@@ -116,14 +130,11 @@ begin
   FSrvClosed := cNo;
 
   FSyncLock := TCriticalSection.Create;
-  SetLength(FWorkerPool, 0);
-
-  SetLength(FWorkerClass, 1);
-  FWorkerClass[0] := TBusinessWorkerBase;
+  FWorkerPool := TObjectDataList.Create(dtObject);
+  FWorkerClass := TObjectDataList.Create(dtClass);
 end;
 
 destructor TBusinessWorkerManager.Destroy;
-var nIdx: Integer;
 begin
   InterlockedExchange(FSrvClosed, cYes);
   //set close float
@@ -140,9 +151,8 @@ begin
       FSyncLock.Enter;
     end;
     
-    for nIdx:=Low(FWorkerPool) to High(FWorkerPool) do
-      FreeAndNil(FWorkerPool[nIdx]);
-    SetLength(FWorkerPool, 0);
+    FreeAndNil(FWorkerPool);
+    FreeAndNil(FWorkerClass);
   finally
     FSyncLock.Leave;
   end;
@@ -152,15 +162,52 @@ begin
 end;
 
 //Date: 2012-3-7
-//Parm: 工作对象类
+//Parm: 工作对象类;标识
 //Desc: 注册nWorker类
 procedure TBusinessWorkerManager.RegisteWorker(
-  const nWorker: TBusinessWorkerClass);
-var nLen: Integer;
+  const nWorker: TBusinessWorkerClass; const nWorkerID: string);
 begin
-  nLen := Length(FWorkerClass);
-  SetLength(FWorkerClass, nLen + 1);
-  FWorkerClass[nLen] := nWorker;
+  FSyncLock.Enter;
+  try
+    FWorkerClass.AddItem(nWorker, nWorkerID);
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
+//Date: 2013-11-22
+//Parm: 标识
+//Desc: 反注册nWorkerID的类和对象
+procedure TBusinessWorkerManager.UnRegistePacker(const nWorkerID: string);
+var nIdx: Integer;
+begin
+  FSyncLock.Enter;
+  try
+    for nIdx:=FWorkerClass.ItemHigh downto FWorkerClass.ItemLow do
+     if FWorkerClass[nIdx].FItemID = nWorkerID then
+      FWorkerClass.DeleteItem(nIdx);
+    //反注册类
+
+    if FNumLocked > 0 then
+    try
+      InterlockedExchange(FSrvClosed, cYes);
+      FSyncLock.Leave;
+
+      while FNumLocked > 0 do
+        Sleep(1);
+      //wait for relese
+    finally
+      FSyncLock.Enter;
+      InterlockedExchange(FSrvClosed, cNo);
+    end;
+
+    for nIdx:=FWorkerPool.ItemHigh downto FWorkerPool.ItemLow do
+     if FWorkerPool[nIdx].FItemID = nWorkerID then
+      FWorkerPool.DeleteItem(nIdx);
+    //释放对象
+  finally
+    FSyncLock.Leave;
+  end;
 end;
 
 //Date: 2012-3-7
@@ -168,29 +215,34 @@ end;
 //Desc: 获取可以执行nFunName的工作对象
 function TBusinessWorkerManager.GetWorker(
   const nFunName: string): TBusinessWorkerBase;
-var nIdx,nLen: Integer;
+var nIdx: Integer;
+    nWorker: TBusinessWorkerBase;
+    nClass: TBusinessWorkerClass;
 begin
   Result := nil;
 
-  for nIdx:=Low(FWorkerPool) to High(FWorkerPool) do
-  if FWorkerPool[nIdx].FEnabled and
-     (FWorkerPool[nIdx].FunctionName = nFunName) then
+  for nIdx:=FWorkerPool.ItemLow to FWorkerPool.ItemHigh do
   begin
-    Result := FWorkerPool[nIdx];
-    Result.FEnabled := False;
-    Exit;
+    nWorker := TBusinessWorkerBase(FWorkerPool.ObjectA[nIdx]);
+    if nWorker.FEnabled and (nWorker.FunctionName = nFunName) then
+    begin
+      Result := nWorker;
+      Result.FEnabled := False;
+      Exit;
+    end;
   end;
 
-  for nIdx:=Low(FWorkerClass) to High(FWorkerClass) do
-  if FWorkerClass[nIdx].FunctionName = nFunName then
+  for nIdx:=FWorkerClass.ItemLow to FWorkerClass.ItemHigh do
   begin
-    nLen := Length(FWorkerPool);
-    SetLength(FWorkerPool, nLen + 1);
-    FWorkerPool[nLen] := FWorkerClass[nIdx].Create;
+    nClass := TBusinessWorkerClass(FWorkerClass.ClassA[nIdx]);
+    if nClass.FunctionName = nFunName then
+    begin
+      Result := nClass.Create;
+      Result.FEnabled := False;
 
-    Result := FWorkerPool[nLen];
-    Result.FEnabled := False;
-    Exit;
+      FWorkerPool.AddItem(Result, FWorkerClass[nIdx].FItemID);
+      Exit;
+    end;
   end;
 end;
 
@@ -217,7 +269,7 @@ begin
 end;
 
 //Desc: 释放工作对象
-procedure TBusinessWorkerManager.RelaseWorkder(
+procedure TBusinessWorkerManager.RelaseWorker(
   const nWorkder: TBusinessWorkerBase);
 begin
   if Assigned(nWorkder) then
@@ -228,6 +280,13 @@ begin
   finally
     FSyncLock.Leave;
   end;
+end;
+
+//Desc: 将数据交由nManager管理
+procedure TBusinessWorkerManager.MoveTo(const nManager: TBusinessWorkerManager);
+begin
+  FWorkerClass.MoveData(nManager.FWorkerClass);
+  FWorkerPool.MoveData(nManager.FWorkerPool);
 end;
 
 //------------------------------------------------------------------------------

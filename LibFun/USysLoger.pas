@@ -44,6 +44,8 @@ type
     procedure AddLog(const nLogItem: PLogItem); overload;
     procedure AddLog(const nObj: TObjectClass; nDesc,nEvent: string); overload;
     //添加日志
+    function HasItem: Boolean;
+    //有未写入
     property LogSync: Boolean read FSyncLog write FSyncLog;
     property LogEvent: TSysLogEvent read FEvent write FEvent;
     //属性相关
@@ -85,6 +87,11 @@ begin
 
   FSyncLock.Free;
   inherited;
+end;
+
+function TSysLoger.HasItem: Boolean;
+begin
+  Result := FLoger.HasItem;
 end;
 
 procedure TSysLoger.AddLog(const nLogItem: PLogItem);
@@ -141,7 +148,7 @@ begin
 
     for i:=0 to nCount do
     begin
-      if nThread.Terminated then Exit;
+      //if nThread.Terminated then Exit;
       nItem := nLogs[i];
 
       nStr := DateTime2Str(nItem.FTime) + sLogField +        //时间

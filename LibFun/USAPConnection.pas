@@ -24,6 +24,7 @@ type
   PSAPParam = ^TSAPParam;
   TSAPParam = record
     FID   : string;                            //参数标识
+    FName : string;                            //标识名称
     FHost : string;                            //主机地址
     FUser : string;                            //用户名
     FPwd  : string;                            //用户密码
