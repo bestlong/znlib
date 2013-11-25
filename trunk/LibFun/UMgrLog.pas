@@ -48,19 +48,21 @@ type
     {*延迟对象*}
     FOwner: TLogManager;
     {*拥有者*}
+    FBufferList: TList;
+    {*缓冲区*}
   protected
-    function GetLogList(const nList: TList): Boolean;
-    {*获取日志*}
     procedure Execute; override;
     {*执行*}
     procedure WriteErrorLog(const nList: TList);
     {*写入错误*}
   public
     constructor Create(AOwner: TLogManager);
+    destructor Destroy; override;
+    {*创建释放*}
     procedure Wakeup;
     {*线程唤醒*}
     property Terminated;
-    {*宣告父类属性*}
+    {*属性相关*}
   end;
 
   TLogEvent = procedure (const nLogs: PLogItem) of Object;
@@ -82,11 +84,12 @@ type
     constructor Create;
     destructor Destroy; override;
     {*创建释放*}
-
     function NewLogItem: PLogItem;
     {*申请资源*}
     procedure AddNewLog(const nItem: PLogItem);
     {*新日志*}
+    function HasItem: Boolean;
+    {*有未写入*}
     property OnNewLog: TLogEvent read FOnNewLog write FOnNewLog;
     property WriteEvent: TWriteLogEvent read FEvent write FEvent;
     property WriteProcedure: TWriteLogProcedure read FProcedure write FProcedure;
@@ -132,7 +135,17 @@ begin
   FreeOnTerminate := False;
 
   FOwner := AOwner;
+  FBufferList := TList.Create;
   FWaiter := TWaitObject.Create;
+end;
+
+destructor TLogThread.Destroy;
+begin
+  FreeLogList(FBufferList);
+  FreeAndNil(FBufferList);
+
+  FWaiter.Free; 
+  inherited;
 end;
 
 //Desc: 唤醒
@@ -143,51 +156,30 @@ end;
 
 //Desc: 写日志线程
 procedure TLogThread.Execute;
-var nList: TList;
 begin
-  nList := TList.Create;
+  while True do
   try
-    while not Terminated do
-    try
+    if Terminated then
+    begin
+      if not FOwner.HasItem then Break;
+      //try save all when thread terminated
+    end else
+    begin
       FWaiter.EnterWait;
-      if Terminated then Break;
-
-      if GetLogList(nList) then
-      begin
-        if Assigned(FOwner.FEvent) then
-           FOwner.FEvent(Self, nList);
-        if Assigned(FOwner.FProcedure) then
-           FOwner.FProcedure(Self, nList);
-        FreeLogList(nList);
-      end;
-    except
-      WriteErrorLog(nList);
-      FreeLogList(nList);
-      //Sleep(1200);
+      if (not FOwner.HasItem) and Terminated then Break;
     end;
-  finally
-    FWaiter.Free; 
-    FreeLogList(nList);
-    nList.Free;
-  end;
-end;
 
-//Date: 2007-11-02
-//Parm: 日志列表
-//Desc: 从LogManager中获取日志,存入nList中
-function TLogThread.GetLogList(const nList: TList): Boolean;
-var nTmp: TList;
-    i,nCount: integer;
-begin
-  nTmp := FOwner.FBuffer.LockList;
-  try
-    nCount := nTmp.Count - 1;
-    for i:=0 to nCount do
-      nList.Add(nTmp[i]);
-    nTmp.Clear;
-  finally
-    FOwner.FBuffer.UnlockList;
-    Result := nList.Count > 0;
+    if FBufferList.Count > 0 then
+    begin
+      if Assigned(FOwner.FEvent) then
+         FOwner.FEvent(Self, FBufferList);
+      if Assigned(FOwner.FProcedure) then
+         FOwner.FProcedure(Self, FBufferList);
+      FreeLogList(FBufferList);
+    end;
+  except
+    WriteErrorLog(FBufferList);
+    FreeLogList(FBufferList);
   end;
 end;
 
@@ -224,6 +216,26 @@ begin
   FreeLogList(FBuffer);
   FBuffer.Free;
   inherited;
+end;
+
+//Desc: 是否有未写入日志项
+function TLogManager.HasItem: Boolean;
+var nList: TList;
+    nIdx,nCount: integer;
+begin
+  nList := FBuffer.LockList;
+  try
+    if FWriter.FBufferList.Count < 1 then
+    begin
+      nCount := nList.Count - 1;
+      for nIdx:=0 to nCount do
+        FWriter.FBufferList.Add(nList[nIdx]);
+      nList.Clear;
+    end;
+  finally
+    Result := FWriter.FBufferList.Count > 0;
+    FBuffer.UnlockList;
+  end;
 end;
 
 //Desc: 添加日志

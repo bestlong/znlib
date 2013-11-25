@@ -7,9 +7,33 @@ unit UBusinessPacker;
 interface
 
 uses
-  Windows, Classes, SyncObjs, SysUtils, NativeXml, UBusinessConst, ULibFun;
+  Windows, Classes, SyncObjs, SysUtils, NativeXml, UObjectList, ULibFun;
 
 type
+  TBWWorkerInfo = record
+    FUser   : string;              //发起人
+    FIP     : string;              //IP地址
+    FMAC    : string;              //主机标识
+    FTime   : TDateTime;           //发起时间
+    FKpLong : Int64;               //消耗时长
+  end;
+
+  PBWDataBase = ^TBWDataBase;
+  TBWDataBase = record
+    FWorker   : string;            //封装者
+    FFrom     : TBWWorkerInfo;     //源
+    FVia      : TBWWorkerInfo;     //经由
+    FFinal    : TBWWorkerInfo;     //到达
+
+    FMsgNO    : string;            //消息号
+    FKey      : string;            //记录标记
+    FParam    : string;            //扩展参数
+
+    FResult   : Boolean;           //执行结果
+    FErrCode  : string;            //错误代码
+    FErrDesc  : string;            //错误描述
+  end;
+
   TBusinessPackerBase = class(TObject)
   protected
     FEnabled: Boolean;
@@ -68,9 +92,9 @@ type
 
   TBusinessPackerManager = class(TObject)
   private
-    FPackerClass: array of TBusinessPackerClass;
+    FPackerClass: TObjectDataList;
     //类列表
-    FPackerPool: array of TBusinessPackerBase;
+    FPackerPool: TObjectDataList;
     //对象池
     FNumLocked: Integer;
     //锁定对象
@@ -85,11 +109,15 @@ type
     constructor Create;
     destructor Destroy; override;
     //创建释放
-    procedure RegistePacker(const nPacker: TBusinessPackerClass);
+    procedure RegistePacker(const nPacker: TBusinessPackerClass;
+     const nPackerID: string = '');
+    procedure UnRegistePacker(const nPackerID: string);
     //注册类
     function LockPacker(const nName: string): TBusinessPackerBase;
     procedure RelasePacker(const nPacker: TBusinessPackerBase);
     //锁定释放
+    procedure MoveTo(const nManager: TBusinessPackerManager);
+    //移动数据
   end;
 
 function PackerEncodeStr(const nStr: string): string;
@@ -123,14 +151,11 @@ begin
   FSrvClosed := cNo;
   
   FSyncLock := TCriticalSection.Create;
-  SetLength(FPackerPool, 0);
-
-  SetLength(FPackerClass, 1);
-  FPackerClass[0] := TBusinessPackerBase;
+  FPackerPool := TObjectDataList.Create(dtObject);
+  FPackerClass := TObjectDataList.Create(dtClass);
 end;
 
 destructor TBusinessPackerManager.Destroy;
-var nIdx: Integer;
 begin
   InterlockedExchange(FSrvClosed, cYes);
   //set close float
@@ -147,9 +172,8 @@ begin
       FSyncLock.Enter;
     end;
 
-    for nIdx:=Low(FPackerPool) to High(FPackerPool) do
-      FreeAndNil(FPackerPool[nIdx]);
-    SetLength(FPackerPool, 0);
+    FreeAndNil(FPackerPool);
+    FreeAndNil(FPackerClass);
   finally
     FSyncLock.Leave;
   end;
@@ -159,15 +183,52 @@ begin
 end;
 
 //Date: 2012-3-7
-//Parm: 工作对象类
+//Parm: 工作对象类;标识
 //Desc: 注册nPacker类
 procedure TBusinessPackerManager.RegistePacker(
-  const nPacker: TBusinessPackerClass);
-var nLen: Integer;
+  const nPacker: TBusinessPackerClass; const nPackerID: string);
 begin
-  nLen := Length(FPackerClass);
-  SetLength(FPackerClass, nLen + 1);
-  FPackerClass[nLen] := nPacker;
+  FSyncLock.Enter;
+  try
+    FPackerClass.AddItem(nPacker, nPackerID);
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
+//Date: 2013-11-20
+//Parm: 标识
+//Desc: 反注册nPackerID的类和对象
+procedure TBusinessPackerManager.UnRegistePacker(const nPackerID: string);
+var nIdx: Integer;
+begin
+  FSyncLock.Enter;
+  try
+    for nIdx:=FPackerClass.ItemHigh downto FPackerClass.ItemLow do
+     if FPackerClass[nIdx].FItemID = nPackerID then
+      FPackerClass.DeleteItem(nIdx);
+    //反注册类
+
+    if FNumLocked > 0 then
+    try
+      InterlockedExchange(FSrvClosed, cYes);
+      FSyncLock.Leave;
+
+      while FNumLocked > 0 do
+        Sleep(1);
+      //wait for relese
+    finally
+      FSyncLock.Enter;
+      InterlockedExchange(FSrvClosed, cNo);
+    end;
+
+    for nIdx:=FPackerPool.ItemHigh downto FPackerPool.ItemLow do
+     if FPackerPool[nIdx].FItemID = nPackerID then
+      FPackerPool.DeleteItem(nIdx);
+    //释放对象
+  finally
+    FSyncLock.Leave;
+  end;
 end;
 
 //Date: 2012-3-7
@@ -175,29 +236,34 @@ end;
 //Desc: 获取可以执行nFunName的工作对象
 function TBusinessPackerManager.GetPacker(
   const nName: string): TBusinessPackerBase;
-var nIdx,nLen: Integer;
+var nIdx: Integer;
+    nPacker: TBusinessPackerBase;
+    nClass: TBusinessPackerClass;
 begin
   Result := nil;
 
-  for nIdx:=Low(FPackerPool) to High(FPackerPool) do
-  if FPackerPool[nIdx].FEnabled and
-     (FPackerPool[nIdx].PackerName = nName) then
+  for nIdx:=FPackerPool.ItemLow to FPackerPool.ItemHigh do
   begin
-    Result := FPackerPool[nIdx];
-    Result.FEnabled := False;
-    Exit;
+    nPacker := TBusinessPackerBase(FPackerPool.ObjectA[nIdx]);
+    if nPacker.FEnabled and (nPacker.PackerName = nName) then
+    begin
+      Result := nPacker;
+      Result.FEnabled := False;
+      Exit;
+    end;
   end;
 
-  for nIdx:=Low(FPackerClass) to High(FPackerClass) do
-  if FPackerClass[nIdx].PackerName = nName then
+  for nIdx:=FPackerClass.ItemLow to FPackerClass.ItemHigh do
   begin
-    nLen := Length(FPackerPool);
-    SetLength(FPackerPool, nLen + 1);
-    FPackerPool[nLen] := FPackerClass[nIdx].Create;
+    nClass := TBusinessPackerClass(FPackerClass.ClassA[nIdx]);
+    if nClass.PackerName = nName then
+    begin
+      Result := nClass.Create;
+      Result.FEnabled := False;
 
-    Result := FPackerPool[nLen];
-    Result.FEnabled := False;
-    Exit;
+      FPackerPool.AddItem(Result, FPackerClass[nIdx].FItemID);
+      Exit;
+    end;
   end;
 end;
 
@@ -214,8 +280,8 @@ begin
     Result := GetPacker(nName);
     
     if not Assigned(Result) then
-      Result := GetPacker('');
-    //the default
+      raise Exception.Create(Format('Packer "%s" is invalid.', [nName]));
+    //xxxxx
   finally
     if Assigned(Result) then
       InterlockedIncrement(FNumLocked);
@@ -235,6 +301,13 @@ begin
   finally
     FSyncLock.Leave;
   end;
+end;
+
+//Desc: 将数据交由nManager管理
+procedure TBusinessPackerManager.MoveTo(const nManager: TBusinessPackerManager);
+begin
+  FPackerClass.MoveData(nManager.FPackerClass);
+  FPackerPool.MoveData(nManager.FPackerPool);
 end;
 
 //------------------------------------------------------------------------------

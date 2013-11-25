@@ -28,6 +28,7 @@ type
   PDBParam = ^TDBParam;
   TDBParam = record
     FID        : string;                       //参数标识
+    FName      : string;                       //标识名称
     FHost      : string;                       //主机地址
     FPort      : Integer;                      //服务端口
     FDB        : string;                       //数据库名
