@@ -23,6 +23,7 @@ type
   TZnVLPictureData = record
     FText: string;                      //文本内容
     FIcon: TBitmap;                     //图像内容
+    FFlag: Integer;                     //图像索引
     FLoop: Byte;                        //重复次数
     FAlign: TZnVLPictureAlign;          //图像位置
   end;
@@ -251,8 +252,8 @@ begin
   end;
 
   if nFree then
-    FData.Free;
-  //xxxxx
+    FreeAndNil(FData);
+  Strings.Clear;
 end;
 
 //Date: 2013-08-31
@@ -282,7 +283,10 @@ begin
     begin
       FreeData(FData[nIdx], False);
       FData.Delete(nIdx);
-      DeleteRow(RowCount - FixedRows);
+
+      if Strings.Count > 0 then
+        Strings.Delete(0);
+      //xxxxx
     end;
   end;
 
@@ -422,12 +426,14 @@ begin
   begin
     FText := nKey;
     FAlign := paLeft;
+    FFlag := -1;
   end;
 
   with Result.FValue do
   begin
     FText := nValue;
     FAlign := paLeft;
+    FFlag := -1;
   end;
 end;
 

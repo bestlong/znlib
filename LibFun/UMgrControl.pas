@@ -22,8 +22,10 @@ type
     FInstance: TList;               //实例
   end;
 
+  TOnCtrlCreate = function (AClass:TWinControlClass; AOwner: TComponent): TWinControl;
+  //创建实例
   TOnCtrlFree = procedure (const nClassID: integer; const nCtrl: TWinControl;
-                             var nNext: Boolean) of Object;
+    var nNext: Boolean) of Object;
   //实例释放
 
   TControlManager = class(TObject)
@@ -43,19 +45,22 @@ type
     {*创建释放*}
     procedure RegCtrl(const nClass: TWinControlClass; const nClassID: integer;
      const nGroupID: string = '');
-    procedure UnregCtrl(const nGroupID: string); overload;
-    procedure UnregCtrl(const nClassID: Integer); overload;
+    procedure UnregCtrl(const nGroupID: string; const nFree: Boolean); overload;
+    procedure UnregCtrl(const nClassID: Integer; const nFree: Boolean); overload;
     {*注册控件*}
     function NewCtrl(const nClassID: integer; const nOwner: TComponent;
-      var nIndex: integer): TWinControl;
+      var nIndex: integer; const nOnCreate: TOnCtrlCreate = nil): TWinControl;
     function NewCtrl2(const nClassID: integer; const nOwner: TComponent;
       const nAlign: TAlign = alClient): TWinControl;
+    function NewCtrl3(const nClassID: integer; const nOwner: TComponent;
+      const nOnCreate: TOnCtrlCreate = nil): TWinControl;
     {*创建控件*}
     procedure FreeCtrl(const nClassID: integer; const nFree: Boolean = True;
-     const nIndex: integer = 0);
+     nIndex: integer = -1; nInstance: Pointer = nil);
     procedure FreeAllCtrl(const nFree: Boolean = True);
     {*释放控件*}
-    function GetCtrl(const nClassID: integer): PControlItem;
+    function GetCtrl(const nGroupID: string): PControlItem; overload;
+    function GetCtrl(const nClassID: integer): PControlItem; overload;
     function GetCtrls(const nList: TList): Boolean;
     {*检索控件*}
     function GetInstances(const nClassID: integer; const nList: TList): Boolean;
@@ -154,7 +159,7 @@ end;
 //Date: 2013-11-24
 //Parm: 分组标识
 //Desc: 卸载分组标识为nGroupID的控件
-procedure TControlManager.UnregCtrl(const nGroupID: string);
+procedure TControlManager.UnregCtrl(const nGroupID: string; const nFree: Boolean);
 var nIdx: Integer;
     nItem: PControlItem;
 begin
@@ -162,7 +167,7 @@ begin
   begin
     nItem := FCtrlList[nIdx];
     if nItem.FGroupID = nGroupID then
-      DeleteItem(nIdx, True);
+      DeleteItem(nIdx, nFree);
     //xxxxx
   end;
 end;
@@ -170,7 +175,7 @@ end;
 //Date: 2013-11-24
 //Parm: 类标识
 //Desc: 卸载类标识为nClassID的控件
-procedure TControlManager.UnregCtrl(const nClassID: Integer);
+procedure TControlManager.UnregCtrl(const nClassID: Integer; const nFree: Boolean);
 var nIdx: Integer;
     nItem: PControlItem;
 begin
@@ -178,26 +183,43 @@ begin
   begin
     nItem := FCtrlList[nIdx];
     if nItem.FClassID = nClassID then
-      DeleteItem(nIdx, True);
+      DeleteItem(nIdx, nFree);
     //xxxxx
   end;
 end;
 
 //Date: 2008-8-6
-//Parm: 标识;是否释放;指定索引
+//Parm: 标识;是否释放;指定索引;实例
 //Desc: 释放nClassID中第nIndex个实例
 procedure TControlManager.FreeCtrl(const nClassID: integer;
-  const nFree: Boolean; const nIndex: integer);
-var nItem: PControlItem;
+  const nFree: Boolean; nIndex: integer; nInstance: Pointer);
+var nIdx: Integer;
+    nItem: PControlItem;
 begin
   nItem := GetCtrl(nClassID);
-  if Assigned(nItem) and Assigned(nItem.FInstance) and
-     (nIndex >= 0) and (nIndex < nItem.FInstance.Count) and
-     Assigned(nItem.FInstance[nIndex]) then
+  if not (Assigned(nItem) and Assigned(nItem.FInstance)) then Exit;
+
+  if (nIndex < 0) and Assigned(nInstance) then
+    nIndex := nItem.FInstance.IndexOf(nInstance);
+  //object index
+
+  if nIndex < 0 then
+  begin
+    nIndex := 0;
+    nIdx := nItem.FInstance.Count - 1;
+  end else
+  begin
+    if nIndex >= nItem.FInstance.Count then
+      Exit;
+    nIdx := nIndex;
+  end;
+
+  while nIdx >= nIndex do
   begin
     if nFree then
-      TWinControl(nItem.FInstance[nIndex]).Free;
-    nItem.FInstance[nIndex] := nil;
+      TWinControl(nItem.FInstance[nIdx]).Free;
+    nItem.FInstance[nIdx] := nil;
+    Dec(nIdx);
   end;
 end;
 
@@ -245,6 +267,26 @@ begin
   begin
     nItem := FCtrlList[nIdx];
     if nItem.FClassID = nClassID then
+    begin
+      Result := nItem;
+      Break;
+    end;
+  end;
+end;
+
+//Date: 2013-11-28
+//Parm: 分组标识
+//Desc: 检索nGroupID的控件
+function TControlManager.GetCtrl(const nGroupID: string): PControlItem;
+var nIdx: integer;
+    nItem: PControlItem;
+begin
+  Result := nil;
+
+  for nIdx:=FCtrlList.Count - 1 downto 0 do
+  begin
+    nItem := FCtrlList[nIdx];
+    if nItem.FGroupID = nGroupID then
     begin
       Result := nItem;
       Break;
@@ -336,8 +378,8 @@ end;
 //Date: 2008-8-6
 //Parm: 标识; 拥有者;实例索引
 //Desc: 创建一个nClassID类的实例,返回索引nIndex
-function TControlManager.NewCtrl(const nClassID: integer;
-  const nOwner: TComponent; var nIndex: integer): TWinControl;
+function TControlManager.NewCtrl(const nClassID: integer; const nOwner: TComponent;
+ var nIndex: integer; const nOnCreate: TOnCtrlCreate): TWinControl;
 var i,nCount: integer;
     nItem: PControlItem;
 begin
@@ -346,7 +388,10 @@ begin
 
   nItem := GetCtrl(nClassID);
   if not Assigned(nItem) then Exit;
-  Result := nItem.FClass.Create(nOwner);
+
+  if Assigned(nOnCreate) then
+       Result := nOnCreate(nItem.FClass, nOwner)
+  else Result := nItem.FClass.Create(nOwner);
   
   if Assigned(nItem.FInstance) then
   begin
@@ -369,8 +414,8 @@ end;
 //Date: 2008-9-20
 //Parm: 标识;拥有者;排列方式
 //Desc: 创建nClasID的唯一实例.若nOwner是容器,则放置到nOwer上
-function TControlManager.NewCtrl2(const nClassID: integer;
-  const nOwner: TComponent; const nAlign: TAlign = alClient): TWinControl;
+function TControlManager.NewCtrl2(const nClassID: integer; 
+ const nOwner: TComponent; const nAlign: TAlign): TWinControl;
 var nIdx: integer;
 begin
   Result := GetInstance(nClassID);
@@ -383,6 +428,19 @@ begin
       Result.Align := nAlign;
     end;
   end;
+end;
+
+//Date: 2013-11-26
+//Parm: 标识;拥有者;创建函数
+//Desc: 使用nOnCreate创建nClassID实例
+function TControlManager.NewCtrl3(const nClassID: integer;
+  const nOwner: TComponent; const nOnCreate: TOnCtrlCreate): TWinControl;
+var nIdx: integer;
+begin
+  Result := GetInstance(nClassID);
+  if not Assigned(Result) then
+    Result := NewCtrl(nClassID, nOwner, nIdx, nOnCreate);
+  //xxxxx
 end;
 
 //Date: 2013-11-24
