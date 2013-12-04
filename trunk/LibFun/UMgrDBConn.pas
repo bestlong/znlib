@@ -1065,7 +1065,7 @@ begin
 end;
 
 initialization
-  gDBConnManager := TDBConnManager.Create;
+  gDBConnManager := nil;
 finalization
   FreeAndNil(gDBConnManager);
 end.
