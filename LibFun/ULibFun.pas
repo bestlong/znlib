@@ -70,6 +70,8 @@ function SplitStr(const nStr: string; const nList: TStrings; const nNum: Word;
 function StrWithWidth(const nStr: string; const nWidth,nStyle: Byte;
   const nFixChar: Char = #32): string;
 //¶¨³¤×Ö·û´®
+function StrPosR(nSub,nStr: string; const nNoCase: Boolean = False): Integer;
+//´Ó×Ö·û´®ÓÒ±ß¼ìË÷
 
 function SplitValue(const nStr: string; const nList: TStrings): Boolean;
 function SplitIntValue(const nStr: string; const nDef: Integer = 0): Integer;
@@ -509,6 +511,38 @@ begin
         Result := StringOfChar(nFixChar, nHalf) + nStr +
                   StringOfChar(nFixChar, nLen - nHalf)
       end else Result := nStr;
+  end;
+end;
+
+//Date: 2013-12-05
+//Parm: ×Ó×Ö·û´®;×Ö·û´®;ºöÂÔ´óÐ¡Ð´
+//Desc: ´ÓnStrµÄÓÒ±ß¼ìË÷nSubµÄÎ»ÖÃ.
+function StrPosR(nSub,nStr: string; const nNoCase: Boolean): Integer;
+var nIdx: Integer;
+    nLen: Integer;
+begin
+  Result := -1;
+  nLen := Length(nSub);
+  if nLen < 1 then Exit;
+
+  if nNoCase then
+  begin
+    nSub := LowerCase(nSub);
+    nStr := LowerCase(nStr);
+  end;
+
+  nIdx:=Length(nStr) - nLen + 1;
+  //start index
+
+  while nIdx > 0 do
+  begin
+    if (nStr[nIdx] = nSub[1]) and (Copy(nStr, nIdx, nLen) = nSub) then
+    begin
+      Result := nIdx;
+      Break;
+    end;
+
+    Dec(nIdx);
   end;
 end;
 
