@@ -52,6 +52,9 @@ type
     FFormID     : Integer;       //功能窗体
   end;
 
+  TPlugMenuItems = array of TPlugMenuItem;
+  //模块菜单列表
+
   PPlugRunParameter = ^TPlugRunParameter;
   TPlugRunParameter = record
     FAppHandle : THandle;        //程序句柄
@@ -129,8 +132,6 @@ type
     procedure ClearMenu(const nFree: Boolean; const nModule: string = '';
       const nLocked: Boolean = True);
     //清理资源
-    function GetModuleInfoList: TPlugModuleInfos;
-    //模块信息列表
     function LoadPlugFile(const nFile: string): string;
     //加载插件
     procedure BeforeUnloadModule(const nWorker: TPlugEventWorker);
@@ -160,9 +161,10 @@ type
     //加载卸载插件
     procedure RefreshUIMenu;
     //更新界面菜单
-    property Menus: TList read FMenuList;
-    property Modules: TPlugModuleInfos read GetModuleInfoList;
-    //属性相关
+    function GetMenuItems: TPlugMenuItems;
+    //模块菜单列表
+    function GetModuleInfoList: TPlugModuleInfos;
+    //模块信息列表
   end;
 
 var
@@ -476,6 +478,26 @@ begin
 end;
 
 //------------------------------------------------------------------------------
+//Date: 2013-12-06
+//Desc: 获取已注册的菜单列表
+function TPlugManager.GetMenuItems: TPlugMenuItems;
+var nIdx,nNum: Integer;
+begin
+  FSyncLock.Enter;
+  try
+    nNum := 0;
+    SetLength(Result, FMenuList.Count);
+
+    for nIdx:=0 to FMenuList.Count - 1 do
+    begin
+      Result[nNum] := PPlugMenuItem(FMenuList[nIdx])^;
+      Inc(nNum);
+    end;
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
 //Date: 2013-11-19
 //Desc: 获取已注册的模块列表
 function TPlugManager.GetModuleInfoList: TPlugModuleInfos;
