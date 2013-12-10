@@ -26,6 +26,8 @@ type
 
   TObjectDataType = (dtObject, dtClass, dtComponent);
   //数据类型
+  TObjectDeleteAction = (daNone, daFree);
+  //删除动作
 
   TOnFreeObjectDataItemProc = procedure (const nItem: Pointer;
     const nType: TObjectDataType);
@@ -39,6 +41,8 @@ type
     //数据列表
     FDataType: TObjectDataType;
     //数据类型
+    FDelAction: TObjectDeleteAction;
+    //删除执行
     FFreeProc: TOnFreeObjectDataItemProc;
     FFreeEvent: TOnFreeObjectDataItemEvent;
     //释放动作
@@ -85,6 +89,7 @@ type
     property ClassA[Index: Integer]: TClass read GetClass;
     property ComponentA[Index: Integer]: TComponentClass read GetComponent;
     property Item[Index: Integer]: PObjectDataItem read GetItemEx; default;
+    property DeleteAction: TObjectDeleteAction read FDelAction write FDelAction;
     property OnFreeProc: TOnFreeObjectDataItemProc read FFreeProc write FFreeProc;
     property OnFreeEvent: TOnFreeObjectDataItemEvent read FFreeEvent write FFreeEvent;
     //属性相关
@@ -94,6 +99,7 @@ implementation
 
 constructor TObjectDataList.Create(const nType: TObjectDataType);
 begin
+  FDelAction := daFree;
   FDataType := nType;
   FDataList := TList.Create;
 end;
@@ -131,7 +137,8 @@ begin
   if nIdx < ItemLow then Exit;
   nItem := FDataList[nIdx];
 
-  if (FDataType = dtObject) and Assigned(nItem.FObject) then
+  if (FDataType = dtObject) and
+     (FDelAction = daFree) and Assigned(nItem.FObject) then
     FreeAndNil(nItem.FObject);
   //xxxxx
 

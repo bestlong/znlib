@@ -13,14 +13,16 @@ interface
 
 uses
   Windows, Classes, Controls, SyncObjs, SysUtils, Forms, Messages,
-  UMgrDBConn, UMgrControl, UMgrParam, UBusinessPacker, UBusinessWorker,
-  ULibFun, UObjectList, USysLoger;
+  ULibFun, UMgrDBConn, UMgrControl, UMgrChannel, UMgrParam, UBusinessPacker,
+  UBusinessWorker, UObjectList, USysLoger;
 
 const
+  {*plug message*}
   PM_RestoreForm   = WM_User + $0001;                //恢复窗体
   PM_RefreshMenu   = WM_User + $0002;                //更新菜单
 
 const
+  {*plug event*}
   cPlugEvent_InitSystemObject     = $0001;
   cPlugEvent_RunSystemObject      = $0002;
   cPlugEvent_FreeSystemObject     = $0003;
@@ -57,11 +59,15 @@ type
 
   PPlugRunParameter = ^TPlugRunParameter;
   TPlugRunParameter = record
+    FAppFlag   : string;         //程序标识
+    FAppPath   : string;         //程序路径
     FAppHandle : THandle;        //程序句柄
     FMainForm  : THandle;        //窗体句柄
+
     FLocalIP   : string;         //本机IP
     FLocalMAC  : string;         //本机MAC
     FLocalName : string;         //本机名称
+    FExtParam  : TStrings;       //扩展参数
   end;
 
   PPlugEnvironment = ^TPlugEnvironment;
@@ -73,8 +79,12 @@ type
     FParamManager  : TParamManager;
     FCtrlManager   : TControlManager;
     FDBConnManger  : TDBConnManager;
+    FCNManager     : TChannelManager;
     FPackerManager : TBusinessPackerManager;
     FWorkerManager : TBusinessWorkerManager;
+
+    FExtendObjects : TStrings;
+    //扩展对象
   end;
 
   TPlugEventWorker = class(TObject)
@@ -120,6 +130,8 @@ type
     //菜单列表
     FRunParam: TPlugRunParameter;
     //运行参数
+    FEnvironment: TPlugEnvironment;
+    //环境参数
     FSyncLock: TCriticalSection;
     //同步锁定
     FIsDestroying: Boolean;
@@ -253,19 +265,23 @@ begin
 
   FMenuChanged := True;
   FMenuList := TList.Create;
-  
+  FEnvironment.FExtendObjects := TStringList.Create;
+
   FSyncLock := TCriticalSection.Create;
   FWorkers := TObjectDataList.Create(dtObject); 
 end;
 
 destructor TPlugManager.Destroy;
 begin
-  FIsDestroying := True; 
+  FIsDestroying := True;
   UnloadPlugsAll;
   ClearMenu(True);
 
   FreeAndNil(FWorkers);
   FreeAndNil(FSyncLock);
+
+  FreeAndNil(FEnvironment.FExtendObjects);
+  FreeAndNil(FRunParam.FExtParam);
   inherited;
 end;
 
@@ -434,47 +450,60 @@ end;
 
 procedure TPlugManager.InitSystemObject(const nModule: string = '');
 begin
+  if nModule = '' then
+    FInitSystemObject := True;
   BroadcastEvent(cPlugEvent_InitSystemObject, nil, nModule);
-  FInitSystemObject := True;
 end;
 
 procedure TPlugManager.RunSystemObject(const nModule: string = '');
 begin
+  if nModule = '' then
+    FRunSystemObject := True;
   BroadcastEvent(cPlugEvent_RunSystemObject, @FRunParam, nModule);
-  FRunSystemObject := True;
 end;
 
 procedure TPlugManager.FreeSystemObject(const nModule: string = '');
 begin
+  if nModule = '' then
+  begin
+    FInitSystemObject := False;
+    FRunSystemObject := False;
+  end;
   BroadcastEvent(cPlugEvent_FreeSystemObject, nil, nModule);
-  FInitSystemObject := False;
-  FRunSystemObject := False;
 end;
 
 procedure TPlugManager.BeforeStartServer(const nModule: string = '');
 begin
+  if nModule = '' then
+    FBeforeStartServer := True;
   BroadcastEvent(cPlugEvent_BeforeStartServer, nil, nModule);
-  FBeforeStartServer := True;
 end;
 
 procedure TPlugManager.AfterServerStarted(const nModule: string = '');
 begin
+  if nModule = '' then
+    FAfterServerStarted := True;
   BroadcastEvent(cPlugEvent_AfterServerStarted, nil, nModule);
-  FAfterServerStarted := True;
 end;
 
 procedure TPlugManager.BeforeStopServer(const nModule: string = '');
 begin
+  if nModule = '' then
+  begin
+    FBeforeStartServer := False;
+    FAfterServerStarted := False;
+  end;
   BroadcastEvent(cPlugEvent_BeforeStopServer, nil, nModule);
-  FBeforeStartServer := False;
-  FAfterServerStarted := False;
 end;
 
 procedure TPlugManager.AfterStopServer(const nModule: string = '');
 begin
+  if nModule = '' then
+  begin
+    FBeforeStartServer := False;
+    FAfterServerStarted := False;
+  end;
   BroadcastEvent(cPlugEvent_AfterStopServer, nil, nModule);
-  FBeforeStartServer := False;
-  FAfterServerStarted := False;
 end;
 
 //------------------------------------------------------------------------------
@@ -523,6 +552,7 @@ end;
 //Desc: 读取环境参数到nEnv,或设置环境参数为nEnv.
 class procedure TPlugManager.EnvAction(const nEnv: PPlugEnvironment;
  const nGet: Boolean);
+var nIdx: Integer;
 begin
   with nEnv^ do
   begin
@@ -537,6 +567,12 @@ begin
       FDBConnManger  := gDBConnManager;
       FPackerManager := gBusinessPackerManager;
       FWorkerManager := gBusinessWorkerManager;
+
+      if not Assigned(FExtendObjects) then Exit;
+      //no extend
+
+      FExtendObjects.AddObject(gChannelManager.ClassName, gChannelManager);
+      //extend objects
     end else
     begin
       Application    := FApplication;
@@ -548,6 +584,14 @@ begin
       gDBConnManager := FDBConnManger;
       gBusinessPackerManager := FPackerManager;
       gBusinessWorkerManager := FWorkerManager;
+
+      if not Assigned(FExtendObjects) then Exit;
+      //no extend
+
+      nIdx := FExtendObjects.IndexOf(gChannelManager.ClassName);
+      if nIdx > -1 then
+        gChannelManager := TChannelManager(FExtendObjects.Objects[nIdx]);
+      //extend objects
     end;
   end;
 end;
@@ -582,7 +626,6 @@ var nHwnd: THandle;
     nLoad: TProcGetWorker;
     nBack: TProcBackupEnv;
 
-    nEnv: TPlugEnvironment;
     nWorker: TPlugEventWorker;
     nClass: TPlugEventWorkerClass;
 begin
@@ -610,8 +653,8 @@ begin
         nHwnd := INVALID_HANDLE_VALUE;
         FWorkers.AddItem(nWorker, nWorker.ModuleInfo.FModuleID);
 
-        EnvAction(@nEnv, True);            
-        nBack(@nEnv);
+        EnvAction(@FEnvironment, True);
+        nBack(@FEnvironment);
         //初始化模块环境变量
 
         nWorker.GetExtendMenu(FMenuList);

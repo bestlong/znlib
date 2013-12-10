@@ -30,6 +30,7 @@ type
     //日志对象
     FSyncLock: TCrossProcWaitObject;
     //同步锁定
+    FEventEx: array of TSysLogEvent;
     FEvent: TSysLogEvent;
     //事件相关
   protected
@@ -46,6 +47,9 @@ type
     //添加日志
     function HasItem: Boolean;
     //有未写入
+    procedure AddReceiver(const nEvent: TSysLogEvent);
+    procedure DelReceiver(const nEvent: TSysLogEvent);
+    //日志接收者
     property LogSync: Boolean read FSyncLog write FSyncLog;
     property LogEvent: TSysLogEvent read FEvent write FEvent;
     //属性相关
@@ -66,11 +70,13 @@ constructor TSysLoger.Create(const nPath,nSyncLock: string);
 begin
   FSyncLock := TCrossProcWaitObject.Create(PChar(nSyncLock));
   //for thread or process sync
+  SetLength(FEventEx, 0);
+  //no ex event
 
   FLoger := TLogManager.Create;
   FLoger.WriteEvent := OnLog;
   FSyncLog := False;
-  
+
   FSyner := TDataSynchronizer.Create;
   FSyner.SyncEvent := OnSync;
   FSyner.SyncFreeEvent := OnFree;
@@ -180,9 +186,64 @@ begin
   end;
 end;
 
-procedure TSysLoger.OnSync(const nData: Pointer; const nSize: Cardinal);
+//------------------------------------------------------------------------------
+//Date: 2013-12-07
+//Parm: 接收事件
+//Desc: 添加nEvent接收事件
+procedure TSysLoger.AddReceiver(const nEvent: TSysLogEvent);
+var nIdx: Integer;
+    nBool: Boolean;
 begin
-  if Assigned(FEvent) then FEvent(PChar(nData));
+  nBool := FSyncLog;
+  try
+    FSyncLog := False;
+    for nIdx:=Low(FEventEx) to High(FEventEx) do
+      if @FEventEx[nIdx] = @nEvent then Exit;
+    //has exists
+    
+    nIdx := Length(FEventEx);
+    SetLength(FEventEx, nIdx + 1);
+    FEventEx[nIdx] := nEvent;
+  finally
+    FSyncLog := nBool;
+  end;
+end;
+
+//Date: 2013-12-07
+//Parm: 接收事件
+//Desc: 移除nEvent接收事件
+procedure TSysLoger.DelReceiver(const nEvent: TSysLogEvent);
+var i,nIdx: Integer;
+    nBool: Boolean;
+begin
+  nBool := FSyncLog;
+  try
+    FSyncLog := False;
+    for i:=Low(FEventEx) to High(FEventEx) do
+    begin
+      if @FEventEx[i] <> @nEvent then Continue;
+      //not match
+
+      for nIdx:=i to High(FEventEx) - 1 do
+        FEventEx[i] := FEventEx[i+1];
+      SetLength(FEventEx, Length(FEventEx) - 1);
+      Exit;
+    end;
+  finally
+    FSyncLog := nBool;
+  end;
+end;
+
+procedure TSysLoger.OnSync(const nData: Pointer; const nSize: Cardinal);
+var nIdx: Integer;
+begin
+  if Assigned(FEvent) then
+    FEvent(PChar(nData));
+  //xxxxx
+
+  for nIdx:=Low(FEventEx) to High(FEventEx) do
+    FEventEx[nIdx](PChar(nData));
+  //xxxxx
 end;
 
 procedure TSysLoger.OnFree(const nData: Pointer; const nSize: Cardinal);

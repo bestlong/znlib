@@ -685,28 +685,26 @@ begin
   try
     with nForm do
     begin
-      if nIni.ReadBool(Name, 'Maximized', False) = True then
-         WindowState := wsMaximized else
-      //最大化状态
+      nMax := High(integer);
+      nValue := nIni.ReadInteger(Name, 'FormTop', nMax);
+      if nValue < nMax then Top := nValue;
+
+      nValue := nIni.ReadInteger(Name, 'FormLeft', nMax);
+      if nValue < nMax then Left := nValue;
+
+      if BorderStyle = bsSizeable then
       begin
-        nMax := High(integer);
-        nValue := nIni.ReadInteger(Name, 'FormTop', nMax);
-        if nValue < nMax then Top := nValue;
+        nValue := nIni.ReadInteger(Name, 'FormWidth', nMax);
+        if nValue < nMax then Width := nValue;
 
-        nValue := nIni.ReadInteger(Name, 'FormLeft', nMax);
-        if nValue < nMax then Left := nValue;
+        nValue := nIni.ReadInteger(Name, 'FormHeight', nMax);
+        if nValue < nMax then Height := nValue;
+      end; //载入窗体位置和宽高
 
-        if BorderStyle = bsSizeable then
-        begin
-          nValue := nIni.ReadInteger(Name, 'FormWidth', nMax);
-          if nValue < nMax then Width := nValue;
-
-          nValue := nIni.ReadInteger(Name, 'FormHeight', nMax);
-          if nValue < nMax then Height := nValue;
-        end;
-      end;
+      if nIni.ReadBool(Name, 'Maximized', False) = True then
+         WindowState := wsMaximized;
+      //最大化状态
     end;
-    //载入窗体位置和宽高
   finally
     if not Assigned(nIniF) then nIni.Free;
   end;
@@ -717,6 +715,7 @@ end;
 procedure SaveFormConfig;
 var nStr: string;
     nIni: TIniFile;
+    nBool: Boolean;
 begin
   if Assigned(nIniF) then
      nIni := nIniF else
@@ -730,18 +729,33 @@ begin
     else nIni := TIniFile.Create(nStr);
   end;
 
+  nBool := False;
   try
     with nForm do
     begin
+      nBool := WindowState = wsMaximized;
+      if nBool then
+      begin
+        LockWindowUpdate(nForm.Handle);
+        WindowState := wsNormal;
+        //还原,记录正常位置宽高
+      end;
+
       nIni.WriteInteger(Name, 'FormTop', Top);
       nIni.WriteInteger(Name, 'FormLeft', Left);
       nIni.WriteInteger(Name, 'FormWidth', Width);
       nIni.WriteInteger(Name, 'FormHeight', Height);
-      nIni.WriteBool(Name, 'Maximized', WindowState = wsMaximized);
+      nIni.WriteBool(Name, 'Maximized', nBool);
       //保存窗体位置和宽高
     end;
   finally
-    if not Assigned(nIniF) then nIni.Free;
+    if nBool then
+      LockWindowUpdate(0);
+    //xxxxx
+
+    if not Assigned(nIniF) then
+      nIni.Free;
+    //xxxxx
   end;
 end;
 

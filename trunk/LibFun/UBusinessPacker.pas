@@ -10,6 +10,7 @@ uses
   Windows, Classes, SyncObjs, SysUtils, NativeXml, UObjectList, ULibFun;
 
 type
+  PBWWorkerInfo = ^TBWWorkerInfo;
   TBWWorkerInfo = record
     FUser   : string;              //发起人
     FIP     : string;              //IP地址
@@ -17,6 +18,9 @@ type
     FTime   : TDateTime;           //发起时间
     FKpLong : Int64;               //消耗时长
   end;
+
+  TBWWorkerInfoType = (itFrom, itVia, itFinal);
+  //信息类型
 
   PBWDataBase = ^TBWDataBase;
   TBWDataBase = record
