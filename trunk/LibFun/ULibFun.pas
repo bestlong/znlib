@@ -750,8 +750,10 @@ begin
     end;
   finally
     if nBool then
+    begin
+      nForm.WindowState := wsMaximized;
       LockWindowUpdate(0);
-    //xxxxx
+    end;
 
     if not Assigned(nIniF) then
       nIni.Free;

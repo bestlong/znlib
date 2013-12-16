@@ -9,17 +9,24 @@
 *******************************************************************************}
 unit UMgrPlug;
 
+{$I Link.Inc}
 interface
 
 uses
   Windows, Classes, Controls, SyncObjs, SysUtils, Forms, Messages,
-  ULibFun, UMgrDBConn, UMgrControl, UMgrChannel, UMgrParam, UBusinessPacker,
-  UBusinessWorker, UObjectList, USysLoger;
+  ULibFun, UMgrDBConn, UMgrControl, UMgrParam, UBusinessPacker, UBusinessWorker,
+  {$IFDEF ChannelPool}UMgrChannel,{$ENDIF}
+  {$IFDEF AutoChannel}UChannelChooser,{$ENDIF}
+
+  UObjectList, USysLoger;
 
 const
   {*plug message*}
   PM_RestoreForm   = WM_User + $0001;                //恢复窗体
   PM_RefreshMenu   = WM_User + $0002;                //更新菜单
+
+  PM_RM_FullStatus = 10;
+  PM_RM_OnlyStatus = 20;                             //菜单参数
 
 const
   {*plug event*}
@@ -52,6 +59,7 @@ type
     FName       : string;        //菜单名
     FCaption    : string;        //菜单标题
     FFormID     : Integer;       //功能窗体
+    FDefault    : Boolean;       //默认启动
   end;
 
   TPlugMenuItems = array of TPlugMenuItem;
@@ -79,7 +87,6 @@ type
     FParamManager  : TParamManager;
     FCtrlManager   : TControlManager;
     FDBConnManger  : TDBConnManager;
-    FCNManager     : TChannelManager;
     FPackerManager : TBusinessPackerManager;
     FWorkerManager : TBusinessWorkerManager;
 
@@ -109,7 +116,7 @@ type
     procedure AfterStopServer; virtual;
     //服务关闭之后调用
   public
-    constructor Create(const nHandle: THandle);
+    constructor Create(const nHandle: THandle = INVALID_HANDLE_VALUE);
     destructor Destroy; override;
     //创建释放
     class function ModuleInfo: TPlugModuleInfo; virtual;
@@ -130,8 +137,6 @@ type
     //菜单列表
     FRunParam: TPlugRunParameter;
     //运行参数
-    FEnvironment: TPlugEnvironment;
-    //环境参数
     FSyncLock: TCriticalSection;
     //同步锁定
     FIsDestroying: Boolean;
@@ -166,6 +171,8 @@ type
     procedure BeforeStopServer(const nModule: string = '');
     procedure AfterStopServer(const nModule: string = '');
     //服务起停业务处理
+    procedure AddEventWorker(const nWorker: TPlugEventWorker);
+    //添加非插件工作对象
     procedure LoadPlugsInDirectory(nPath: string);
     function UpdatePlug(const nFile: string; var nHint: string): Boolean;
     function UnloadPlug(const nModule: string): string;
@@ -173,7 +180,7 @@ type
     //加载卸载插件
     procedure RefreshUIMenu;
     //更新界面菜单
-    function GetMenuItems: TPlugMenuItems;
+    function GetMenuItems(const nResetMenu: Boolean): TPlugMenuItems;
     //模块菜单列表
     function GetModuleInfoList: TPlugModuleInfos;
     //模块信息列表
@@ -265,8 +272,6 @@ begin
 
   FMenuChanged := True;
   FMenuList := TList.Create;
-  FEnvironment.FExtendObjects := TStringList.Create;
-
   FSyncLock := TCriticalSection.Create;
   FWorkers := TObjectDataList.Create(dtObject); 
 end;
@@ -279,8 +284,6 @@ begin
 
   FreeAndNil(FWorkers);
   FreeAndNil(FSyncLock);
-
-  FreeAndNil(FEnvironment.FExtendObjects);
   FreeAndNil(FRunParam.FExtParam);
   inherited;
 end;
@@ -318,7 +321,7 @@ begin
   if (not FIsDestroying) and FMenuChanged then
   begin
     FMenuChanged := False;
-    PostMessage(FRunParam.FMainForm, PM_RefreshMenu, 0, 0);
+    PostMessage(FRunParam.FMainForm, PM_RefreshMenu, PM_RM_FullStatus, 0);
   end;
 end;
 
@@ -417,7 +420,9 @@ begin
           nHwnd := nWorker.ModuleHandle;
           FWorkers.DeleteItem(nIdx);
           //删除模块工作对象
-          FreeLibrary(nHwnd);
+
+          if nHwnd <> INVALID_HANDLE_VALUE then
+            FreeLibrary(nHwnd);
           //关闭模块句柄
         end else Exit;
       end;
@@ -508,9 +513,11 @@ end;
 
 //------------------------------------------------------------------------------
 //Date: 2013-12-06
+//Parm: 重置默认标识
 //Desc: 获取已注册的菜单列表
-function TPlugManager.GetMenuItems: TPlugMenuItems;
+function TPlugManager.GetMenuItems(const nResetMenu: Boolean): TPlugMenuItems;
 var nIdx,nNum: Integer;
+    nMenu: PPlugMenuItem;
 begin
   FSyncLock.Enter;
   try
@@ -519,7 +526,11 @@ begin
 
     for nIdx:=0 to FMenuList.Count - 1 do
     begin
-      Result[nNum] := PPlugMenuItem(FMenuList[nIdx])^;
+      nMenu := FMenuList[nIdx];
+      Result[nNum] := nMenu^;
+
+      if nResetMenu then
+        nMenu.FDefault := False;
       Inc(nNum);
     end;
   finally
@@ -571,8 +582,13 @@ begin
       if not Assigned(FExtendObjects) then Exit;
       //no extend
 
-      FExtendObjects.AddObject(gChannelManager.ClassName, gChannelManager);
-      //extend objects
+      {$IFDEF ChannelPool}
+      FExtendObjects.AddObject(TChannelManager.ClassName, gChannelManager);
+      {$ENDIF}
+
+      {$IFDEF AutoChannel}
+      FExtendObjects.AddObject(TChannelChoolser.ClassName, gChannelChoolser);
+      {$ENDIF}
     end else
     begin
       Application    := FApplication;
@@ -588,10 +604,17 @@ begin
       if not Assigned(FExtendObjects) then Exit;
       //no extend
 
-      nIdx := FExtendObjects.IndexOf(gChannelManager.ClassName);
+      {$IFDEF ChannelPool}
+      nIdx := FExtendObjects.IndexOf(TChannelManager.ClassName);
       if nIdx > -1 then
         gChannelManager := TChannelManager(FExtendObjects.Objects[nIdx]);
-      //extend objects
+      {$ENDIF}
+
+      {$IFDEF AutoChannel}
+      nIdx := FExtendObjects.IndexOf(TChannelChoolser.ClassName);
+      if nIdx > -1 then
+        gChannelChoolser := TChannelChoolser(FExtendObjects.Objects[nIdx]);
+      {$ENDIF}
     end;
   end;
 end;
@@ -602,7 +625,6 @@ end;
 function TPlugManager.UnloadPlug(const nModule: string): string;
 begin
   BroadcastEvent(cPlugEvent_BeforeUnloadModule, nil, nModule);
-  RefreshUIMenu;
 end;
 
 //Date: 2013-11-22
@@ -610,7 +632,6 @@ end;
 procedure TPlugManager.UnloadPlugsAll;
 begin
   BroadcastEvent(cPlugEvent_BeforeUnloadModule);
-  RefreshUIMenu;
 end;
 
 //------------------------------------------------------------------------------
@@ -626,6 +647,7 @@ var nHwnd: THandle;
     nLoad: TProcGetWorker;
     nBack: TProcBackupEnv;
 
+    nEnv: TPlugEnvironment;
     nWorker: TPlugEventWorker;
     nClass: TPlugEventWorkerClass;
 begin
@@ -644,6 +666,9 @@ begin
       Exit;
     end;
 
+    nEnv.FExtendObjects := nil;
+    //init state
+    
     FSyncLock.Enter;
     try
       nLoad(nClass);
@@ -653,8 +678,9 @@ begin
         nHwnd := INVALID_HANDLE_VALUE;
         FWorkers.AddItem(nWorker, nWorker.ModuleInfo.FModuleID);
 
-        EnvAction(@FEnvironment, True);
-        nBack(@FEnvironment);
+        nEnv.FExtendObjects := TStringList.Create;
+        EnvAction(@nEnv, True);
+        nBack(@nEnv);
         //初始化模块环境变量
 
         nWorker.GetExtendMenu(FMenuList);
@@ -672,6 +698,8 @@ begin
         //新模块与主程序状态同步
       end;
     finally
+      if Assigned(nEnv.FExtendObjects) then
+        nEnv.FExtendObjects.Free;
       FSyncLock.Leave;
     end;
 
@@ -683,6 +711,35 @@ begin
   end;
 end;
 
+//Date: 2013-12-11
+//Parm: 工作对象;刷新菜单
+//Desc: 添加新的工作对象到管理器中
+procedure TPlugManager.AddEventWorker(const nWorker: TPlugEventWorker);
+begin
+  FSyncLock.Enter;
+  try
+    if FWorkers.FindItem(nWorker.ModuleInfo.FModuleID) < 0 then
+    begin
+      FWorkers.AddItem(nWorker, nWorker.ModuleInfo.FModuleID);
+      nWorker.GetExtendMenu(FMenuList);
+      FMenuChanged := True;
+      //新模块提供的菜单扩展
+
+      if FInitSystemObject then
+        InitSystemObject(nWorker.ModuleInfo.FModuleID);
+      if FRunSystemObject then
+        RunSystemObject(nWorker.ModuleInfo.FModuleID);
+      if FBeforeStartServer then
+        BeforeStartServer(nWorker.ModuleInfo.FModuleID);
+      if FAfterServerStarted then
+        AfterServerStarted(nWorker.ModuleInfo.FModuleID);
+      //新模块与主程序状态同步
+    end;
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
 //Date: 2013-11-22
 //Parm: 模块路径
 //Desc: 载入nFile模块到管理器
@@ -690,7 +747,6 @@ function TPlugManager.UpdatePlug(const nFile: string; var nHint: string): Boolea
 begin
   nHint := LoadPlugFile(nFile);
   Result := nHint = '';
-  RefreshUIMenu;
 end;
 
 //Date: 2013-11-22
@@ -722,8 +778,6 @@ begin
   finally
     FindClose(nRec);
   end;
-
-  RefreshUIMenu;
 end;
 
 initialization

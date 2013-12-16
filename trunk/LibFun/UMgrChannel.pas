@@ -228,7 +228,7 @@ begin
 end;
 
 initialization
-  gChannelManager := TChannelManager.Create;
+  gChannelManager := nil;
 finalization
   FreeAndNil(gChannelManager);
 end.
