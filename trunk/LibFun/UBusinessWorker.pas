@@ -80,7 +80,8 @@ type
       const nWorkerID: string = '');
     procedure UnRegistePacker(const nWorkerID: string);
     //注册类
-    function LockWorker(const nFunName: string): TBusinessWorkerBase;
+    function LockWorker(const nFunName: string;
+      const nExceptionOnNull: Boolean = True): TBusinessWorkerBase;
     procedure RelaseWorker(const nWorkder: TBusinessWorkerBase);
     //锁定释放
     procedure MoveTo(const nManager: TBusinessWorkerManager);
@@ -247,8 +248,8 @@ begin
 end;
 
 //Desc: 获取工作对象
-function TBusinessWorkerManager.LockWorker(
-  const nFunName: string): TBusinessWorkerBase;
+function TBusinessWorkerManager.LockWorker(const nFunName: string;
+  const nExceptionOnNull: Boolean): TBusinessWorkerBase;
 begin
   Result := nil;
   if FSrvClosed = cYes then Exit;
@@ -258,7 +259,7 @@ begin
     if FSrvClosed = cYes then Exit;
     Result := GetWorker(nFunName);
     
-    if not Assigned(Result) then
+    if (not Assigned(Result)) and nExceptionOnNull then
       raise Exception.Create(Format('Worker "%s" is invalid.', [nFunName]));
     //xxxxx
   finally

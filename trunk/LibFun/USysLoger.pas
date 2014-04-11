@@ -197,8 +197,8 @@ begin
   nBool := FSyncLog;
   try
     FSyncLog := False;
-    for nIdx:=Low(FEventEx) to High(FEventEx) do
-      if @FEventEx[nIdx] = @nEvent then Exit;
+    //for nIdx:=Low(FEventEx) to High(FEventEx) do
+    //  if @FEventEx[nIdx] = @nEvent then Exit;
     //has exists
     
     nIdx := Length(FEventEx);
