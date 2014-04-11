@@ -239,7 +239,7 @@ begin
 
   with nP^ do
   begin
-    FClass := nItem;
+    FComponent := nItem;
     FItemID := nID;
     FData := nData;
   end;
