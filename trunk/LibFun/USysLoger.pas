@@ -12,11 +12,17 @@ unit USysLoger;
 interface
 
 uses
-  Windows, SysUtils, Classes, UMgrSync, UMgrLog, ULibFun, UWaitItem;
+  Windows, SysUtils, Classes, SyncObjs, UMgrSync, UMgrLog, ULibFun, UWaitItem;
 
 type
   TSysLogEvent = procedure (const nStr: string) of object;
   //日志事件
+
+  PSysLogReceiver = ^TSysLogReceiver;
+  TSysLogReceiver = record
+    FID: Integer;
+    FEvent: TSysLogEvent;
+  end;
 
   TSysLoger = class(TObject)
   private
@@ -28,12 +34,17 @@ type
     //同步对象
     FLoger: TLogManager;
     //日志对象
+    FSyncSection: TCriticalSection;
     FSyncLock: TCrossProcWaitObject;
     //同步锁定
-    FEventEx: array of TSysLogEvent;
+    FReceiverIDBase: Integer;
+    FReceivers: TList;
+    //事件接收者
     FEvent: TSysLogEvent;
     //事件相关
   protected
+    procedure ClearReceivers(const nFree: Boolean);
+    //清理资源
     procedure OnLog(const nThread: TLogThread; const nLogs: TList);
     procedure OnSync(const nData: Pointer; const nSize: Cardinal);
     procedure OnFree(const nData: Pointer; const nSize: Cardinal);
@@ -47,8 +58,8 @@ type
     //添加日志
     function HasItem: Boolean;
     //有未写入
-    procedure AddReceiver(const nEvent: TSysLogEvent);
-    procedure DelReceiver(const nEvent: TSysLogEvent);
+    function AddReceiver(const nEvent: TSysLogEvent): Integer;
+    procedure DelReceiver(const nReceiverID: Integer);
     //日志接收者
     property LogSync: Boolean read FSyncLog write FSyncLog;
     property LogEvent: TSysLogEvent read FEvent write FEvent;
@@ -70,8 +81,10 @@ constructor TSysLoger.Create(const nPath,nSyncLock: string);
 begin
   FSyncLock := TCrossProcWaitObject.Create(PChar(nSyncLock));
   //for thread or process sync
-  SetLength(FEventEx, 0);
-  //no ex event
+  
+  FReceiverIDBase := 0;
+  FReceivers := TList.Create;
+  FSyncSection := TCriticalSection.Create;
 
   FLoger := TLogManager.Create;
   FLoger.WriteEvent := OnLog;
@@ -88,13 +101,30 @@ end;
 
 destructor TSysLoger.Destroy;
 begin
+  ClearReceivers(True);
   FLoger.Free;
   FSyner.Free;
 
+  FSyncSection.Free;
   FSyncLock.Free;
   inherited;
 end;
 
+procedure TSysLoger.ClearReceivers(const nFree: Boolean);
+var nIdx: Integer;
+begin
+  for nIdx:=FReceivers.Count - 1 downto 0 do
+  begin
+    Dispose(PSysLogReceiver(FReceivers[nIdx]));
+    FReceivers.Delete(nIdx);
+  end;
+
+  if nFree then
+    FReceivers.Free;
+  //xxxxx
+end;
+
+//------------------------------------------------------------------------------
 function TSysLoger.HasItem: Boolean;
 begin
   Result := FLoger.HasItem;
@@ -190,47 +220,43 @@ end;
 //Date: 2013-12-07
 //Parm: 接收事件
 //Desc: 添加nEvent接收事件
-procedure TSysLoger.AddReceiver(const nEvent: TSysLogEvent);
-var nIdx: Integer;
-    nBool: Boolean;
+function TSysLoger.AddReceiver(const nEvent: TSysLogEvent): Integer;
+var nItem: PSysLogReceiver;
 begin
-  nBool := FSyncLog;
+  FSyncSection.Enter;
   try
-    FSyncLog := False;
-    //for nIdx:=Low(FEventEx) to High(FEventEx) do
-    //  if @FEventEx[nIdx] = @nEvent then Exit;
-    //has exists
+    New(nItem);
+    FReceivers.Add(nItem);
+
+    Inc(FReceiverIDBase);
+    Result := FReceiverIDBase;
     
-    nIdx := Length(FEventEx);
-    SetLength(FEventEx, nIdx + 1);
-    FEventEx[nIdx] := nEvent;
+    nItem.FID := FReceiverIDBase;
+    nItem.FEvent := nEvent;
   finally
-    FSyncLog := nBool;
+    FSyncSection.Leave;
   end;
 end;
 
 //Date: 2013-12-07
-//Parm: 接收事件
-//Desc: 移除nEvent接收事件
-procedure TSysLoger.DelReceiver(const nEvent: TSysLogEvent);
-var i,nIdx: Integer;
-    nBool: Boolean;
+//Parm: 标识
+//Desc: 移除nReceiverID接收事件
+procedure TSysLoger.DelReceiver(const nReceiverID: Integer);
+var nIdx: Integer;
+    nItem: PSysLogReceiver;
 begin
-  nBool := FSyncLog;
+  FSyncSection.Enter;
   try
-    FSyncLog := False;
-    for i:=Low(FEventEx) to High(FEventEx) do
+    for nIdx:=FReceivers.Count - 1 downto 0 do
     begin
-      if @FEventEx[i] <> @nEvent then Continue;
-      //not match
+      nItem := FReceivers[nIdx];
+      if nItem.FID <> nReceiverID then continue;
 
-      for nIdx:=i to High(FEventEx) - 1 do
-        FEventEx[i] := FEventEx[i+1];
-      SetLength(FEventEx, Length(FEventEx) - 1);
-      Exit;
+      Dispose(nItem);
+      FReceivers.Delete(nIdx);
     end;
   finally
-    FSyncLog := nBool;
+    FSyncSection.Leave;
   end;
 end;
 
@@ -241,9 +267,14 @@ begin
     FEvent(PChar(nData));
   //xxxxx
 
-  for nIdx:=Low(FEventEx) to High(FEventEx) do
-    FEventEx[nIdx](PChar(nData));
-  //xxxxx
+  FSyncSection.Enter;
+  try
+    for nIdx:=FReceivers.Count - 1 downto 0 do
+      PSysLogReceiver(FReceivers[nIdx]).FEvent(PChar(nData));
+    //xxxxx
+  finally
+    FSyncSection.Leave;
+  end;
 end;
 
 procedure TSysLoger.OnFree(const nData: Pointer; const nSize: Cardinal);
