@@ -5626,18 +5626,20 @@ begin
   Result := ISuperObject(FPtr)
 end;
 
+{$OVERFLOWCHECKS OFF}
 class function TSuperAvlEntry.Hash(const k: SOString): Cardinal;
 var
   h: cardinal;
   i: Integer;
 begin
   h := 0;
-{$Q-}
+{.$Q-}
   for i := 1 to Length(k) do
     h := h*129 + ord(k[i]) + $9e370001;
-{$Q+}
+{.$Q+}
   Result := h;
 end;
+{$OVERFLOWCHECKS ON}
 
 procedure TSuperAvlEntry.SetValue(const val: ISuperObject);
 begin
