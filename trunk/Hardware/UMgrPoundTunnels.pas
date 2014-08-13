@@ -7,7 +7,8 @@ unit UMgrPoundTunnels;
 interface
 
 uses
-  Windows, Classes, SysUtils, CPort, CPortTypes, NativeXml, ULibFun, USysLoger;
+  Windows, Classes, SysUtils, SyncObjs, CPort, CPortTypes, NativeXml, ULibFun,
+  USysLoger;
 
 const
   cPTMaxCameraTunnel = 5;
@@ -86,6 +87,8 @@ type
     //通道列表
     FStrList: TStrings;
     //字符列表
+    FSyncLock: TCriticalSection;
+    //同步锁定
   protected
     procedure ClearList(const nFree: Boolean);
     //清理资源
@@ -126,13 +129,17 @@ begin
   FPorts := TList.Create;
   FCameras := TList.Create;
   FTunnels := TList.Create;
+
   FStrList := TStringList.Create;
+  FSyncLock := TCriticalSection.Create;
 end;
 
 destructor TPoundTunnelManager.Destroy;
 begin
   ClearList(True);
   FStrList.Free;
+  
+  FSyncLock.Free;
   inherited;
 end;
 
@@ -368,49 +375,54 @@ procedure TPoundTunnelManager.ActivePort(const nTunnel: string;
   nEvent: TOnTunnelDataEvent; const nOpenPort: Boolean);
 var nPT: PPTTunnelItem;
 begin
-  nPT := GetTunnel(nTunnel);
-  if not Assigned(nPT) then Exit;
-
-  if not Assigned(nPT.FPort.FCOMPort) then
-  begin
-    nPT.FPort.FCOMPort := TComPort.Create(nil);
-    with nPT.FPort.FCOMPort do
-    begin
-      Tag := FPorts.IndexOf(nPT.FPort);
-      OnRxChar := OnComData;
-
-      with Timeouts do
-      begin
-        ReadTotalConstant := 100;
-        ReadTotalMultiplier := 10;
-      end;
-
-      with Parity do
-      begin
-        Bits := nPT.FPort.FParitybit;
-        Check := nPT.FPort.FParityCheck;
-      end;
-
-      Port := nPT.FPort.FPort;
-      BaudRate := nPT.FPort.FRate;
-      DataBits := nPT.FPort.FDatabit;
-      StopBits := nPT.FPort.FStopbit;
-    end;
-  end;
-  
-  nPT.FOnData := nEvent;
-  nPT.FOldEventTunnel := nPT.FPort.FEventTunnel;
-  nPT.FPort.FEventTunnel := nPT;
-
+  FSyncLock.Enter;
   try
-    if nOpenPort then
-      nPT.FPort.FCOMPort.Open;
-    //开启端口
-  except
-    on E: Exception do
+    nPT := GetTunnel(nTunnel);
+    if not Assigned(nPT) then Exit;
+
+    if not Assigned(nPT.FPort.FCOMPort) then
     begin
-      WriteLog(E.Message);
+      nPT.FPort.FCOMPort := TComPort.Create(nil);
+      with nPT.FPort.FCOMPort do
+      begin
+        Tag := FPorts.IndexOf(nPT.FPort);
+        OnRxChar := OnComData;
+
+        with Timeouts do
+        begin
+          ReadTotalConstant := 100;
+          ReadTotalMultiplier := 10;
+        end;
+
+        with Parity do
+        begin
+          Bits := nPT.FPort.FParitybit;
+          Check := nPT.FPort.FParityCheck;
+        end;
+
+        Port := nPT.FPort.FPort;
+        BaudRate := nPT.FPort.FRate;
+        DataBits := nPT.FPort.FDatabit;
+        StopBits := nPT.FPort.FStopbit;
+      end;
     end;
+  
+    nPT.FOnData := nEvent;
+    nPT.FOldEventTunnel := nPT.FPort.FEventTunnel;
+    nPT.FPort.FEventTunnel := nPT;
+
+    try
+      if nOpenPort then
+        nPT.FPort.FCOMPort.Open;
+      //开启端口
+    except
+      on E: Exception do
+      begin
+        WriteLog(E.Message);
+      end;
+    end;
+  finally
+    FSyncLock.Leave;
   end;
 end;
 
@@ -420,10 +432,12 @@ end;
 procedure TPoundTunnelManager.ClosePort(const nTunnel: string);
 var nPT: PPTTunnelItem;
 begin
-  nPT := GetTunnel(nTunnel);
-  if Assigned(nPT) then
-  begin
+  FSyncLock.Enter;
+  try
+    nPT := GetTunnel(nTunnel);
+    if not Assigned(nPT) then Exit;
     nPT.FOnData := nil;
+
     if nPT.FPort.FEventTunnel = nPT then
     begin
       nPT.FPort.FEventTunnel := nPT.FOldEventTunnel;
@@ -433,6 +447,8 @@ begin
         nPT.FPort.FCOMPort.Close;
       //通道空闲则关闭
     end;
+  finally
+    FSyncLock.Leave;
   end;
 end;
 
@@ -448,26 +464,31 @@ begin
     ReadStr(nPort.FCOMBuff, Count);
   end;
 
-  if not (Assigned(nPort.FEventTunnel) and
-          Assigned(nPort.FEventTunnel.FOnData)) then Exit;
-  //无接收事件
-
-  nPort.FCOMData := nPort.FCOMData + nPort.FCOMBuff;
-  if Length(nPort.FCOMData) < nPort.FPackLen then Exit;
-  //数据不够整包长度
-
+  FSyncLock.Enter;
   try
-    if ParseWeight(nPort) then
-    begin
-      nVal := StrToFloat(nPort.FCOMData) * nPort.FDataEnlarge;
-      nPort.FEventTunnel.FOnData(nVal);
-      nPort.FCOMData := '';
+    if not (Assigned(nPort.FEventTunnel) and
+            Assigned(nPort.FEventTunnel.FOnData)) then Exit;
+    //无接收事件
+
+    nPort.FCOMData := nPort.FCOMData + nPort.FCOMBuff;
+    if Length(nPort.FCOMData) < nPort.FPackLen then Exit;
+    //数据不够整包长度
+
+    try
+      if ParseWeight(nPort) then
+      begin
+        nVal := StrToFloat(nPort.FCOMData) * nPort.FDataEnlarge;
+        nPort.FEventTunnel.FOnData(nVal);
+        nPort.FCOMData := '';
+      end;
+    except
+      on E: Exception do
+      begin
+        WriteLog(E.Message);
+      end;
     end;
-  except
-    on E: Exception do
-    begin
-      WriteLog(E.Message);
-    end;
+  finally
+    FSyncLock.Leave;
   end;
 
   if Length(nPort.FCOMData) >= 5 * nPort.FPackLen then

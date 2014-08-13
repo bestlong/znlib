@@ -345,6 +345,7 @@ begin
   begin
     FillChar(nBW, SizeOf(nBW), #0);
     nBW.FMsgNO := PBWDataBase(nData).FMsgNO;
+    nBW.FKey := PBWDataBase(nData).FKey;
     PBWDataBase(nData)^ := nBW;
 
     with PBWDataBase(nData)^ do
