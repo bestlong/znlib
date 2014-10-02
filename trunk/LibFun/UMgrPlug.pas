@@ -17,8 +17,7 @@ uses
   ULibFun, UMgrDBConn, UMgrControl, UMgrParam, UBusinessPacker, UBusinessWorker,
   {$IFDEF ChannelPool}UMgrChannel,{$ENDIF}
   {$IFDEF AutoChannel}UChannelChooser,{$ENDIF}
-
-  UObjectList, USysLoger;
+  UTaskMonitor, UObjectList, USysLoger;
 
 const
   {*plug message*}
@@ -83,13 +82,14 @@ type
     FApplication   : TApplication;
     FScreen        : TScreen;
     FSysLoger      : TSysLoger;
+    FTaskMonitor   : TTaskMonitor;
 
     FParamManager  : TParamManager;
     FCtrlManager   : TControlManager;
     FDBConnManger  : TDBConnManager;
     FPackerManager : TBusinessPackerManager;
     FWorkerManager : TBusinessWorkerManager;
-
+    //核心对象
     FExtendObjects : TStrings;
     //扩展对象
   end;
@@ -182,6 +182,7 @@ type
     //更新界面菜单
     function GetMenuItems(const nResetMenu: Boolean): TPlugMenuItems;
     //模块菜单列表
+    function GetModuleInfo(const nModule: string): TPlugModuleInfo;
     function GetModuleInfoList: TPlugModuleInfos;
     //模块信息列表
   end;
@@ -558,6 +559,28 @@ begin
   end;
 end;
 
+//Date: 2014/9/2
+//Parm: 模块标识
+//Desc: 获取nModule的信息
+function TPlugManager.GetModuleInfo(const nModule: string): TPlugModuleInfo;
+var nIdx: Integer;
+begin
+  FSyncLock.Enter;
+  try
+    FillChar(Result, SizeOf(Result), #0);
+    //init
+
+    for nIdx:=FWorkers.ItemLow to FWorkers.ItemHigh do
+    if TPlugEventWorker(FWorkers.ObjectA[nIdx]).ModuleInfo.FModuleID = nModule then
+    begin
+      Result := TPlugEventWorker(FWorkers.ObjectA[nIdx]).ModuleInfo;
+      Exit;
+    end;
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
 //Date: 2013-11-24
 //Parm: 变量参数;获取or设置
 //Desc: 读取环境参数到nEnv,或设置环境参数为nEnv.
@@ -572,6 +595,7 @@ begin
       FApplication   := Application;
       FScreen        := Screen;
       FSysLoger      := gSysLoger;
+      FTaskMonitor   := gTaskMonitor;
 
       FParamManager  := gParamManager;
       FCtrlManager   := gControlManager;
@@ -594,6 +618,7 @@ begin
       Application    := FApplication;
       Screen         := FScreen;
       gSysLoger      := FSysLoger;
+      gTaskMonitor   := FTaskMonitor;
 
       gParamManager  := FParamManager;
       gControlManager:= FCtrlManager;
