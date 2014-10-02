@@ -66,6 +66,11 @@ function CombinStr(const nStrs: array of string;
 function SplitStr(const nStr: string; const nList: TStrings; const nNum: Word;
  const nFlag: string = ''; const nFlagEnd: Boolean = True): Boolean;
 //合并,拆分字符串
+function AdjustListStrFormat(const nItems,nSymbol: string; const nAdd: Boolean;
+ nFlag: string = ''; const nFlagEnd: Boolean = True): string;
+function AdjustListStrFormat2(const nList: TStrings; const nSymbol: string;
+ const nAdd: Boolean; nFlag: string = ''; const nFlagEnd: Boolean = True): string;
+//格式化列表字符串
 
 function StrWithWidth(const nStr: string; const nWidth,nStyle: Byte;
   const nFixChar: Char = #32): string;
@@ -487,6 +492,68 @@ begin
   if nNum > 0 then
        Result := nList.Count = nNum
   else Result := nList.Count > 0;
+end;
+
+//Date: 2014-09-17
+//Parm: 内容;符号;是否添加;分隔符
+//Desc: 在nList的所有项前后,添加或删除nSymbol符号
+function AdjustListStrFormat2(const nList: TStrings; const nSymbol: string;
+ const nAdd: Boolean; nFlag: string; const nFlagEnd: Boolean): string;
+var nStr: string;
+    nIdx,nLen,nSLen: Integer;
+begin
+  if nFlag = '' then
+     nFlag := ';';
+  nSLen := Length(nSymbol);
+
+  for nIdx:=0 to nList.Count - 1 do
+  begin
+    nStr := nList[nIdx];
+    nLen := Length(nStr);
+
+    if nAdd then
+    begin
+      if Copy(nStr, 1, nSLen) <> nSymbol then
+        nStr := nSymbol + nStr;
+      //xxxxx
+
+      if Copy(nStr, nLen - nSLen + 1, nSLen) <> nSymbol then
+        nStr := nStr + nSymbol;
+      //xxxxx
+    end else
+    begin
+      if Copy(nStr, 1, nSLen) = nSymbol then
+        nStr := Copy(nStr, 2, nLen - 1);
+      //xxxxx
+
+      if Copy(nStr, nLen - nSLen + 1, nSLen) = nSymbol then
+        nStr := Copy(nStr, 1, nLen - nSLen);
+      //xxxxx
+    end;
+
+    nList[nIdx] := nStr;
+    //change
+  end;
+
+  Result := CombinStr(nList, nFlag, nFlagEnd);
+  //合并
+end;
+
+//Date: 2014-09-17
+//Parm: 内容;符号;是否添加;分隔符
+//Desc: 在nItems的所有项前后,添加或删除nSymbol符号
+function AdjustListStrFormat(const nItems,nSymbol: string; const nAdd: Boolean;
+ nFlag: string; const nFlagEnd: Boolean): string;
+var nList: TStrings;
+begin
+  nList := TStringList.Create;
+  try
+    if nFlag = '' then nFlag := ';';
+    SplitStr(nItems, nList, 0, nFlag, nFlagEnd);
+    Result := AdjustListStrFormat2(nList, nSymbol, nAdd, nFlag, False);
+  finally
+    nList.Free;
+  end;
 end;
 
 //Desc: 定长字符串,不足则用nFixChar填充

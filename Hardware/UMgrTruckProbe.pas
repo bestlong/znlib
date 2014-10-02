@@ -9,14 +9,14 @@ interface
 
 uses
   Windows, Classes, SysUtils, SyncObjs, IdTCPConnection, IdTCPClient, IdGlobal,
-  NativeXml, USysLoger, ULibFun;
+  NativeXml, UWaitItem, USysLoger, ULibFun;
 
 const
   cProber_NullASCII           = $30;       //ASCII空字节
   cProber_Flag_Begin          = $F0;       //开始标识
   
-  cProber_Frame_QueryIO       = $10;       //状态查询(open close)
-  cProber_Frame_RelaysOC      = $20;       //心跳真(sweet heart)
+  cProber_Frame_QueryIO       = $10;       //状态查询(in out)
+  cProber_Frame_RelaysOC      = $20;       //通道开合(open close)
   cProber_Frame_DataForward   = $30;       //485数据转发
   cProber_Frame_IP            = $50;       //设置IP
   cProber_Frame_MAC           = $60;       //设置MAC
@@ -24,12 +24,16 @@ const
   cProber_Query_All           = $00;       //查询全部
   cProber_Query_In            = $01;       //查询输入
   cProber_Query_Out           = $02;       //查询输出
+  cProber_Query_Interval      = 2000;      //查询间隔
 
   cProber_Len_Frame           = $14;       //普通帧长
   cProber_Len_FrameData       = 16;        //普通定长数据
   cProber_Len_485Data         = 100;       //485转发数据
     
 type
+  TProberIOAddress = array[0..7] of Byte;
+  //in-out address
+
   TProberFrameData = array [0..cProber_Len_FrameData - 1] of Byte;
   TProber485Data   = array [0..cProber_Len_485Data - 1] of Byte;
 
@@ -53,7 +57,7 @@ type
     FHeader : TProberFrameHeader;   //帧头
     FData   : TProber485Data;       //数据
     FVerify : Byte;                //校验位
-  end;
+  end;  
 
   PProberHost = ^TProberHost;
   TProberHost = record
@@ -61,11 +65,11 @@ type
     FName    : string;               //名称
     FHost    : string;               //IP
     FPort    : Integer;              //端口
+    FStatusI : TProberIOAddress;     //输入状态
+    FStatusO : TProberIOAddress;     //输出状态
+    FStatusL : Int64;                //状态时间
     FEnable  : Boolean;              //是否启用
-  end;
-
-  TProberIOAddress = array[0..7] of Byte;
-  //in-out address
+  end;  
 
   PProberTunnel = ^TProberTunnel;
   TProberTunnel = record
@@ -75,6 +79,13 @@ type
     FIn      : TProberIOAddress;     //输入地址
     FOut     : TProberIOAddress;     //输出地址
     FEnable  : Boolean;              //是否启用
+  end;
+
+  PProberTunnelCommand = ^TProberTunnelCommand;
+  TProberTunnelCommand = record
+    FTunnel  : PProberTunnel;
+    FCommand : Integer;
+    FData    : Pointer;
   end;
 
   TProberHosts = array of TProberHost;
@@ -88,34 +99,73 @@ const
   cSize_Prober_Display  = SizeOf(TProberFrameDataForward);
 
 type
-  TProberManager = class(TObject)
+  TProberManager = class;
+  TProberThread = class(TThread)
   private
-    FHosts: TProberHosts;
-    FTunnels: TProberTunnels;
-    //通道列表
-    FRetry: Byte;
+    FOwner: TProberManager;
+    //拥有者
+    FBuffer: TList;
+    //待发送数据
+    FWaiter: TWaitObject;
+    //等待对象
     FClient: TIdTCPClient;
-    //网络对象
-    FSyncLock: TCriticalSection;
-    //同步锁定
+    //客户端
+    FQueryFrame: TProberFrameControl;
+    //状态查询
   protected
+    procedure DoExecute(const nHost: PProberHost);
+    procedure Execute; override;
+    //执行线程
     procedure DisconnectClient;
     function SendData(const nHost: PProberHost; var nData: TIdBytes;
       const nRecvLen: Integer): string;
     //发送数据
   public
+    constructor Create(AOwner: TProberManager);
+    destructor Destroy; override;
+    //创建释放
+    procedure Wakeup;
+    procedure StopMe;
+    //启停通道
+  end;
+
+  TProberManager = class(TObject)
+  private
+    FRetry: Byte;
+    //重试次数
+    FInSignalOn: Byte;
+    FInSignalOff: Byte;
+    FOutSignalOn: Byte;
+    FOutSignalOff: Byte;
+    //输入输出信号
+    FCommand: TList;
+    //命令列表
+    FHosts: TProberHosts;
+    FTunnels: TProberTunnels;
+    //通道列表
+    FReader: TProberThread;
+    //连接对象
+    FSyncLock: TCriticalSection;
+    //同步锁定
+  protected
+    procedure ClearList(const nList: TList);
+    //清理数据
+  public
     constructor Create;
     destructor Destroy; override;
     //创建释放
+    procedure StartProber;
+    procedure StopProber;
+    //启停检测器
     procedure LoadConfig(const nFile: string);
     //读取配置
     function OpenTunnel(const nTunnel: string): Boolean;
     function CloseTunnel(const nTunnel: string): Boolean;
-    function TunnelOC(const nTunnel: string; const nOC: Boolean): string;
+    function TunnelOC(const nTunnel: string; nOC: Boolean): string;
     //开合通道
     function GetTunnel(const nTunnel: string): PProberTunnel;
     procedure EnableTunnel(const nTunnel: string; const nEnabled: Boolean);
-    function QueryStatus(const nHost: PProberHost; const nQType: Byte;
+    function QueryStatus(const nHost: PProberHost;
       var nIn,nOut: TProberIOAddress): string;
     function IsTunnelOK(const nTunnel: string): Boolean;
     //查询状态
@@ -211,8 +261,8 @@ begin
   nList := TStringList.Create;
   try
     SplitStr(nStr, nList, 0 , ',');
-    if nList.Count < 1 then Exit;
-
+    //拆分
+    
     for nIdx:=Low(nAddr) to High(nAddr) do
     begin
       if nIdx < nList.Count then
@@ -224,25 +274,68 @@ begin
   end;
 end;
 
+{$IFDEF DEBUG}
+procedure LogHex(const nData: TIdBytes);
+var nStr: string;
+    nIdx: Integer;
+begin
+  nStr := '';
+  for nIdx:=Low(nData) to High(nData) do
+    nStr := nStr + IntToHex(nData[nIdx], 1) + ' ';
+  WriteLog(nStr);
+end;
+{$ENDIF}
+
 //------------------------------------------------------------------------------
 constructor TProberManager.Create;
 begin
   FRetry := 2;
-  //retry times on error
+  FCommand := TList.Create;
   FSyncLock := TCriticalSection.Create;
-  
-  FClient := TIdTCPClient.Create;
-  FClient.ReadTimeout := 3 * 1000;
-  FClient.ConnectTimeout := 3 * 1000;
 end;
 
 destructor TProberManager.Destroy;
 begin
-  FClient.Disconnect;
-  FClient.Free;
-
+  StopProber;
+  ClearList(FCommand);
+  FCommand.Free;
+  
   FSyncLock.Free;
   inherited;
+end;
+
+//Desc: 清理数据
+procedure TProberManager.ClearList(const nList: TList);
+var nIdx: Integer;
+    nData: PProberTunnelCommand;
+begin
+  for nIdx:=nList.Count - 1 downto 0 do
+  begin
+    nData := nList[nIdx];
+
+    if nData.FCommand = cProber_Frame_DataForward then
+         Dispose(PProberFrameDataForward(nData.FData))
+    else Dispose(PProberFrameControl(nData.FData));
+
+    Dispose(nData);
+    nList.Delete(nIdx);
+  end;
+end;
+
+//Desc: 启动
+procedure TProberManager.StartProber;
+begin
+  if not Assigned(FReader) then
+    FReader := TProberThread.Create(Self);
+  FReader.Wakeup;
+end;
+
+//Desc: 停止
+procedure TProberManager.StopProber;
+begin
+  if Assigned(FReader) then
+    FReader.StopMe;
+  FReader := nil;
 end;
 
 //Desc: 载入nFile配置文件
@@ -273,6 +366,31 @@ begin
         FHost  := NodeByName('ip').ValueAsString;
         FPort  := NodeByName('port').ValueAsInteger;
         FEnable := NodeByName('enable').ValueAsInteger = 1;
+
+        FStatusL := 0;
+        //最后一次查询状态时间,超时系统会不认可当前状态
+      end;
+
+      nTmp := nNode.FindNode('signal_in');
+      if Assigned(nTmp) then
+      begin
+        FInSignalOn := StrToInt(nTmp.AttributeByName['on']);
+        FInSignalOff := StrToInt(nTmp.AttributeByName['off']);
+      end else
+      begin
+        FInSignalOn := $00;
+        FInSignalOff := $01;
+      end;
+
+      nTmp := nNode.FindNode('signal_out');
+      if Assigned(nTmp) then
+      begin
+        FOutSignalOn := StrToInt(nTmp.AttributeByName['on']);
+        FOutSignalOff := StrToInt(nTmp.AttributeByName['off']);
+      end else
+      begin
+        FOutSignalOn := $01;
+        FOutSignalOff := $02;
       end;
 
       nTmp := nNode.FindNode('tunnels');
@@ -304,142 +422,64 @@ begin
   end;
 end;
 
-{$IFDEF DEBUG}
-procedure LogHex(const nData: TIdBytes);
-var nStr: string;
-    nIdx: Integer;
-begin
-  nStr := '';
-  for nIdx:=Low(nData) to High(nData) do
-    nStr := nStr + IntToHex(nData[nIdx], 1) + ' ';
-  WriteLog(nStr);
-end;
-{$ENDIF}
-
 //------------------------------------------------------------------------------
-//Desc: 断开客户端套接字
-procedure TProberManager.DisconnectClient;
+//Date：2014-5-14
+//Parm：通道号
+//Desc：获取nTunnel的通道数据
+function TProberManager.GetTunnel(const nTunnel: string): PProberTunnel;
+var nIdx: Integer;
 begin
-  FClient.Disconnect;
-  if Assigned(FClient.IOHandler) then
-    FClient.IOHandler.InputBuffer.Clear;
-  //try to swtich connection
-end;
+  Result := nil;
 
-//Date：2014-5-13
-//Parm：主机;发送数据[in],应答数据[out];待接收长度
-//Desc：向nHost发送nData数据,并接收应答
-function TProberManager.SendData(const nHost: PProberHost; var nData: TIdBytes;
-  const nRecvLen: Integer): string;
-var nBuf: TIdBytes;
-    nIdx,nLen: Integer;
-begin
-  Result := '';
-  try
-    nLen := Length(nData);
-    ProberVerifyData(nData, nLen, True);
-    //添加异或校验
-
-    SetLength(nBuf, nLen);
-    CopyTIdBytes(nData, 0, nBuf, 0, nLen);
-    //备份待发送内容
-
-    DisconnectClient;
-    //断开客户端
-    nIdx := 0;
-
-    while nIdx < FRetry do
-    try
-      {$IFDEF DEBUG}
-      LogHex(nBuf);
-      {$ENDIF}
-
-      if not FClient.Connected then
-      begin
-        FClient.Host := nHost.FHost;
-        FClient.Port := nHost.FPort;
-        FClient.Connect;
-      end;
-
-      Inc(nIdx);
-      FClient.IOHandler.Write(nBuf);
-      //send data
-
-      if nRecvLen < 1 then Exit;
-      //no data to receive
-
-      FClient.IOHandler.ReadBytes(nData, nRecvLen, False);
-      //read respond
-      
-      {$IFDEF DEBUG}
-      LogHex(nData);
-      {$ENDIF}
-
-      nLen := Length(nData);
-      if (nLen = nRecvLen) and
-         (nData[nLen-1] = ProberVerifyData(nData, nLen, False)) then Exit;
-      //校验通过
-
-      if nIdx = FRetry then
-      begin
-        Result := '未从[ %s:%s.%d ]收到能通过校验的应答数据.';
-        Result := Format(Result, [nHost.FName, nHost.FHost, nHost.FPort]);
-      end;
-    except
-      on E: Exception do
-      begin
-        Inc(nIdx);
-        if nIdx < FRetry then
-             Sleep(100)
-        else raise;
-
-        DisconnectClient;
-        //断开重连
-      end;
-    end;
-  except
-    on E: Exception do
-    begin
-      Result := '向[ %s:%s:%d ]发送数据失败,描述: %s';
-      Result := Format(Result, [nHost.FName, nHost.FHost, nHost.FPort, E.Message]);
-    end;
+  for nIdx:=Low(FTunnels) to High(FTunnels) do
+  if CompareText(nTunnel, FTunnels[nIdx].FID) = 0 then
+  begin
+    Result := @FTunnels[nIdx];
+    Break;
   end;
 end;
 
 //Date：2014-5-13
 //Parm：通道号;True=Open,False=Close
 //Desc：对nTunnel执行开合操作,若有错误则返回
-function TProberManager.TunnelOC(const nTunnel: string;
-  const nOC: Boolean): string;
+function TProberManager.TunnelOC(const nTunnel: string; nOC: Boolean): string;
 var i,j,nIdx: Integer;
-    nBuf: TIdBytes;
-    nData: TProberFrameControl;
+    nPTunnel: PProberTunnel;
+    nCmd: PProberTunnelCommand;
+    nData: PProberFrameControl;
 begin
   Result := '';
-  nIdx := -1;
-  //default
-  
-  for i:=Low(FTunnels) to High(FTunnels) do
-  if CompareText(nTunnel, FTunnels[i].FID) = 0 then
-  begin
-    nIdx := i;
-    Break;
-  end;
+  if not Assigned(FReader) then Exit;
+  nPTunnel := GetTunnel(nTunnel);
 
-  if nIdx < 0 then
+  if not Assigned(nPTunnel) then
   begin
     Result := '通道[ %s ]编号无效.';
     Result := Format(Result, [nTunnel]); Exit;
   end;
 
-  with FTunnels[nIdx] do
-  begin
-    if not (FHost.FEnable and FEnable) then Exit;
-    //不启用,不发送
+  if not (nPTunnel.FEnable and nPTunnel.FHost.FEnable ) then Exit;
+  //不启用,不发送
 
-    FillChar(nData, cSize_Prober_Control, cProber_NullASCII);
-    //init
-    
+  i := 0;
+  for nIdx:=Low(nPTunnel.FOut) to High(nPTunnel.FOut) do
+    if nPTunnel.FOut[nIdx] <> cProber_NullASCII then Inc(i);
+  //xxxxx
+
+  if i < 1 then Exit;
+  //无输出地址,表示不使用输出控制
+
+  FSyncLock.Enter;
+  try
+    New(nCmd);
+    FCommand.Add(nCmd);
+    nCmd.FTunnel := nPTunnel;
+    nCmd.FCommand := cProber_Frame_RelaysOC;
+
+    New(nData);
+    nCmd.FData := nData;
+    FillChar(nData^, cSize_Prober_Control, cProber_NullASCII);
+
     with nData.FHeader do
     begin
       FBegin := cProber_Flag_Begin;
@@ -447,27 +487,25 @@ begin
       FType := cProber_Frame_RelaysOC;
 
       if nOC then
-           FExtend := $01
-      else FExtend := $02;
+           FExtend := FOutSignalOn
+      else FExtend := FOutSignalOff;
     end;
 
     j := 0;
-    for i:=Low(FOut) to High(FOut) do
+    for i:=Low(nPTunnel.FOut) to High(nPTunnel.FOut) do
     begin
-      if FOut[i] = cProber_NullASCII then Continue;
+      if nPTunnel.FOut[i] = cProber_NullASCII then Continue;
       //invalid out address
 
-      nData.FData[j] := FOut[i];
+      nData.FData[j] := nPTunnel.FOut[i];
       Inc(j);
     end;
 
-    FSyncLock.Enter;
-    try
-      nBuf := RawToBytes(nData, cSize_Prober_Control);
-      Result := SendData(FHost, nBuf, cSize_Prober_Control);
-    finally
-      FSyncLock.Leave;
-    end;
+    FReader.Wakeup;
+    //xxxxx
+  finally
+
+    FSyncLock.Leave;
   end;
 end;
 
@@ -499,68 +537,6 @@ begin
   //xxxxxx
 end;
 
-//------------------------------------------------------------------------------
-//Date：2014-5-14
-//Parm：主机;查询类型;输入输出结果
-//Desc：查询nHost的输入输出状态,存入nIn nOut.
-function TProberManager.QueryStatus(const nHost: PProberHost; const nQType: Byte;
-  var nIn, nOut: TProberIOAddress): string;
-var nBuf: TIdBytes;
-    nData: TProberFrameControl;
-begin
-  Result := '';
-  FillChar(nIn, cSize_Prober_IOAddr, cProber_NullASCII);
-  FillChar(nOut, cSize_Prober_IOAddr, cProber_NullASCII);
-
-  if not nHost.FEnable then Exit;
-  //不启用,不发送
-
-  FillChar(nData, cSize_Prober_Control, cProber_NullASCII);
-  //init
-  
-  with nData.FHeader do
-  begin
-    FBegin  := cProber_Flag_Begin;
-    FLength := cProber_Len_Frame;
-    FType   := cProber_Frame_QueryIO;
-    FExtend := nQType;
-  end;
-
-  FSyncLock.Enter;
-  try
-    nBuf := RawToBytes(nData, cSize_Prober_Control);
-    Result := SendData(nHost, nBuf, cSize_Prober_Control);
-    if Result <> '' then Exit;
-
-    BytesToRaw(nBuf, nData, cSize_Prober_Control);
-    if (nQType = cProber_Query_All) or (nQType = cProber_Query_In) then
-      Move(nData.FData[0], nIn[0], cSize_Prober_IOAddr);
-    //in status
-
-    if (nQType = cProber_Query_All) or (nQType = cProber_Query_Out) then
-      Move(nData.FData[cSize_Prober_IOAddr], nOut[0], cSize_Prober_IOAddr);
-    //out status
-  finally
-    FSyncLock.Leave;
-  end;
-end;
-
-//Date：2014-5-14
-//Parm：通道号
-//Desc：获取nTunnel的通道数据
-function TProberManager.GetTunnel(const nTunnel: string): PProberTunnel;
-var nIdx: Integer;
-begin
-  Result := nil;
-
-  for nIdx:=Low(FTunnels) to High(FTunnels) do
-  if CompareText(nTunnel, FTunnels[nIdx].FID) = 0 then
-  begin
-    Result := @FTunnels[nIdx];
-    Break;
-  end;
-end;
-
 //Date: 2014-07-03
 //Parm: 通道号;启用
 //Desc: 是否启用nTunnel通道
@@ -575,52 +551,321 @@ begin
 end;
 
 //Date：2014-5-14
+//Parm：主机;查询类型;输入输出结果
+//Desc：查询nHost的输入输出状态,存入nIn nOut.
+function TProberManager.QueryStatus(const nHost: PProberHost;
+  var nIn, nOut: TProberIOAddress): string;
+var nIdx: Integer;
+begin
+  for nIdx:=Low(TProberIOAddress) to High(TProberIOAddress) do
+  begin
+    nIn[nIdx]  := FInSignalOn;
+    nOut[nIdx] := FInSignalOn;
+  end;
+
+  for nIdx:=Low(FHosts) to High(FHosts) do
+  if nHost.FID = FHosts[nIdx].FID then
+  begin
+    if GetTickCount - FHosts[nIdx].FStatusL >= 2 * cProber_Query_Interval then
+    begin
+      Result := Format('车辆检测器[ %s ]状态查询超时.', [nHost.FName]);
+      Exit;
+    end;
+
+    nIn := FHosts[nIdx].FStatusI;
+    nOut := FHosts[nIdx].FStatusO;
+    Result := ''; Exit;
+  end;
+
+  Result := Format('车辆检测器[ %s ]已无效.', [nHost.FID]);
+end;
+
+//Date：2014-5-14
 //Parm：通道号
 //Desc：查询nTunnel的输入是否全部为无信号
 function TProberManager.IsTunnelOK(const nTunnel: string): Boolean;
-var nStr: string;
-    nIdx: Integer;
+var nIdx,nNum: Integer;
     nPT: PProberTunnel;
-    nIn,nOut: TProberIOAddress;
 begin
   Result := False;
   nPT := GetTunnel(nTunnel);
 
-  if Assigned(nPT) then
-  try
-    if not (nPT.FEnable and nPT.FHost.FEnable) then
-    begin
-      Result := True;
-      Exit;
-    end;
+  if not Assigned(nPT) then
+  begin
+    WriteLog(Format('通道[ %s ]无效.',  [nTunnel]));
+    Exit;
+  end;
 
-    nStr := QueryStatus(nPT.FHost, cProber_Query_In, nIn, nOut);
-    //query all
-    
-    if nStr <> '' then
-    begin
-      WriteLog(nStr);
-      Exit;
-    end;
-
-    for nIdx:=Low(nPT.FIn) to High(nPT.FIn) do
-    begin
-      if nPT.FIn[nIdx] = cProber_NullASCII then Continue;
-      //invalid addr
-
-      if nIn[nPT.FIn[nIdx] - 1] = $00 then Exit;
-      //某路输入有信号,认为车辆未停妥
-    end;
-
+  if not (nPT.FEnable and nPT.FHost.FEnable) then
+  begin
     Result := True;
+    Exit;
+  end;
+
+  nNum := 0;
+  for nIdx:=Low(nPT.FIn) to High(nPT.FIn) do
+   if nPT.FIn[nIdx] <> cProber_NullASCII then Inc(nNum);
+  //xxxxx
+
+  if nNum < 1 then //无输入地址,标识不使用输入监测
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  if GetTickCount - nPT.FHost.FStatusL >= 2 * cProber_Query_Interval then
+  begin
+    WriteLog(Format('车辆检测器[ %s ]状态查询超时.', [nPT.FHost.FName]));
+    Exit;
+  end;
+
+  for nIdx:=Low(nPT.FIn) to High(nPT.FIn) do
+  begin
+    if nPT.FIn[nIdx] = cProber_NullASCII then Continue;
+    //invalid addr
+
+    if nPT.FHost.FStatusI[nPT.FIn[nIdx] - 1] = FInSignalOn then Exit;
+    //某路输入有信号,认为车辆未停妥
+  end;
+
+  Result := True;
+end;
+
+//------------------------------------------------------------------------------
+constructor TProberThread.Create(AOwner: TProberManager);
+begin
+  inherited Create(False);
+  FreeOnTerminate := False;
+
+  FOwner := AOwner;
+  FBuffer := TList.Create;
+  
+  FWaiter := TWaitObject.Create;
+  FWaiter.Interval := cProber_Query_Interval;
+
+  FClient := TIdTCPClient.Create(nil);
+  FClient.ReadTimeout := 3 * 1000;
+  FClient.ConnectTimeout := 3 * 1000;
+end;
+
+destructor TProberThread.Destroy;
+begin
+  FClient.Free;
+  FWaiter.Free;
+
+  FOwner.ClearList(FBuffer);
+  FBuffer.Free;
+  inherited;
+end;
+
+procedure TProberThread.Wakeup;
+begin
+  FWaiter.Wakeup;
+end;
+
+procedure TProberThread.StopMe;
+begin
+  Terminate;
+  FWaiter.Wakeup;
+
+  WaitFor;
+  Free;
+end;
+
+procedure TProberThread.Execute;
+var nIdx: Integer;
+begin
+  while not Terminated do
+  try
+    FWaiter.EnterWait;
+    if Terminated then Exit;
+
+    with FOwner do
+    begin
+      FSyncLock.Enter;
+      try
+        ClearList(FBuffer);
+        for nIdx:=0 to FCommand.Count - 1 do
+          FBuffer.Add(FCommand[nIdx]);
+        FCommand.Clear;
+      finally
+        FSyncLock.Leave;
+      end;
+
+      for nIdx:=Low(FOwner.FHosts) to High(FOwner.FHosts) do
+      begin
+        DoExecute(@FOwner.FHosts[nIdx]);
+        if Terminated then Exit;
+      end;
+    end;
+  except
+    on E:Exception do
+    begin
+      WriteLog(Format('Host:[ %s ] %s', [FClient.Host, E.Message]));
+    end;
+  end;
+end;
+
+procedure TProberThread.DoExecute(const nHost: PProberHost);
+var nStr: string;
+    nIdx,nSize: Integer;
+    nBuf: TIdBytes;
+    nCmd: PProberTunnelCommand;
+begin
+  try
+    if FClient.Host <> nHost.FHost then
+      DisconnectClient;
+    //xxxxx
+
+    if not FClient.Connected then
+    begin
+      FClient.Host := nHost.FHost;
+      FClient.Port := nHost.FPort;
+      FClient.Connect;
+    end;
+  except
+    WriteLog(Format('连接[ %s.%d ]失败.', [FClient.Host, FClient.Port]));
+    FClient.Disconnect;
+    Exit;
+  end;
+
+  FillChar(FQueryFrame, cSize_Prober_Control, cProber_NullASCII);
+  //init
+  with FQueryFrame.FHeader do
+  begin
+    FBegin  := cProber_Flag_Begin;
+    FLength := cProber_Len_Frame;
+    FType   := cProber_Frame_QueryIO;
+    FExtend := cProber_Query_All;
+  end;
+
+  nBuf := RawToBytes(FQueryFrame, cSize_Prober_Control);
+  nStr := SendData(nHost, nBuf, cSize_Prober_Control);
+  //查询状态
+
+  if nStr <> '' then
+  begin
+    WriteLog(nStr);
+    Exit;
+  end;
+
+  with FQueryFrame do
+  begin
+    BytesToRaw(nBuf, FQueryFrame, cSize_Prober_Control);
+    Move(FData[0], nHost.FStatusI[0], cSize_Prober_IOAddr);
+    Move(FData[cSize_Prober_IOAddr], nHost.FStatusO[0], cSize_Prober_IOAddr);
+
+    nHost.FStatusL := GetTickCount;
+    //更新时间
+    Sleep(100);
+  end;
+
+  for nIdx:=FBuffer.Count - 1 downto 0 do
+  begin
+    nCmd := FBuffer[nIdx];
+    if nCmd.FTunnel.FHost <> nHost then Continue;
+
+    if nCmd.FCommand = cProber_Frame_DataForward then
+    begin
+      nSize := cSize_Prober_Display;
+      nBuf := RawToBytes(PProberFrameDataForward(nCmd.FData)^, nSize);
+    end else
+    begin
+      nSize := cSize_Prober_Control;
+      nBuf := RawToBytes(PProberFrameControl(nCmd.FData)^, nSize);
+    end;
+
+    nStr := SendData(nHost, nBuf, cSize_Prober_Control);
+    if nStr <> '' then
+      WriteLog(nStr);
+    Sleep(100);
+  end;
+end;
+
+//Desc: 断开客户端套接字
+procedure TProberThread.DisconnectClient;
+begin
+  FClient.Disconnect;
+  if Assigned(FClient.IOHandler) then
+    FClient.IOHandler.InputBuffer.Clear;
+  //try to swtich connection
+end;
+
+//Date：2014-5-13
+//Parm：主机;发送数据[in],应答数据[out];待接收长度
+//Desc：向nHost发送nData数据,并接收应答
+function TProberThread.SendData(const nHost: PProberHost; var nData: TIdBytes;
+  const nRecvLen: Integer): string;
+var nBuf: TIdBytes;
+    nIdx,nLen: Integer;
+begin
+  Result := '';
+  try
+    nLen := Length(nData);
+    ProberVerifyData(nData, nLen, True);
+    //添加异或校验
+
+    SetLength(nBuf, nLen);
+    CopyTIdBytes(nData, 0, nBuf, 0, nLen);
+    //备份待发送内容
+
+    nIdx := 0;
+    while nIdx < FOwner.FRetry do
+    try
+      {$IFDEF DEBUG}
+      LogHex(nBuf);
+      {$ENDIF}
+
+      if not FClient.Connected then
+      begin
+        FClient.Host := nHost.FHost;
+        FClient.Port := nHost.FPort;
+        FClient.Connect;
+      end;
+
+      Inc(nIdx);
+      FClient.IOHandler.Write(nBuf);
+      //send data
+
+      if nRecvLen < 1 then Exit;
+      //no data to receive
+
+      FClient.IOHandler.ReadBytes(nData, nRecvLen, False);
+      //read respond
+      
+      {$IFDEF DEBUG}
+      LogHex(nData);
+      {$ENDIF}
+
+      nLen := Length(nData);
+      if (nLen = nRecvLen) and
+         (nData[nLen-1] = ProberVerifyData(nData, nLen, False)) then Exit;
+      //校验通过
+
+      if nIdx = FOwner.FRetry then
+      begin
+        Result := '未从[ %s:%s.%d ]收到能通过校验的应答数据.';
+        Result := Format(Result, [nHost.FName, nHost.FHost, nHost.FPort]);
+      end;
+    except
+      on E: Exception do
+      begin
+        DisconnectClient;
+        //断开重连
+
+        Inc(nIdx);
+        if nIdx < FOwner.FRetry then
+             Sleep(100)
+        else raise;
+      end;
+    end;
   except
     on E: Exception do
     begin
-      nStr := '函数[ IsTunnelOK.%s ]错误,描述: %s';
-      nStr := Format(nStr, [nTunnel, E.Message]);
-      WriteLog(nStr);
+      Result := '向[ %s:%s:%d ]发送数据失败,描述: %s';
+      Result := Format(Result, [nHost.FName, nHost.FHost, nHost.FPort, E.Message]);
     end;
-  end;  
+  end;
 end;
 
 initialization
