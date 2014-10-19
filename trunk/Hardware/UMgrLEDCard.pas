@@ -593,6 +593,9 @@ begin
 
           Canvas.Pen.Color := clRed;
           Canvas.Pen.Width := 1;
+
+          Canvas.Lock;
+          //锁定,开始绘制
           nL := 1;
           
           for i:=Low(FColWidth) to High(FColWidth)-1 do
@@ -656,7 +659,16 @@ begin
 
         if nI >= Length(FColWidth) then
         begin
-          SaveToFile(GetBMPFile(FGroup, FPicNum + nFileBase));
+          nStr := GetBMPFile(FGroup, FPicNum + nFileBase);
+          if FileExists(nStr) then
+            DeleteFile(nStr);
+          Sleep(500); //wait io
+
+          SaveToFile(nStr);
+          Canvas.Unlock;
+          //绘制完毕,解锁
+          
+          Sleep(500); //wait io
           FreeAndNil(nBmp);
         end;
       end;
@@ -667,10 +679,11 @@ begin
       nStr := GetBMPFile(FGroup, FPicNum + nFileBase);
       if FileExists(nStr) then
         DeleteFile(nStr);
-      //xxxxx
+      Sleep(500); //wait io
 
       nBmp.SaveToFile(nStr);
-      Sleep(1000); //wait i/o
+      nBmp.Canvas.Unlock;
+      Sleep(500); //wait io
     end;
 
     for nIdx:=0 to FOwner.Cards.Count - 1 do
