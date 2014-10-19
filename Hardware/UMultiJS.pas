@@ -871,7 +871,7 @@ begin
   try
     if GetTunnel(nTunnel, nPH, nPT) and Assigned(nPH.FReader) then
          Result := nPT.FIsRun
-    else Result := True;
+    else Result := False;
   finally
     FSyncLock.Leave;
   end;

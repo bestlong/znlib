@@ -185,6 +185,8 @@ type
     function GetModuleInfo(const nModule: string): TPlugModuleInfo;
     function GetModuleInfoList: TPlugModuleInfos;
     //模块信息列表
+    property RunParam: TPlugRunParameter read FRunParam;
+    //属性相关
   end;
 
 var
