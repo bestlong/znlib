@@ -187,10 +187,10 @@ begin
       //if nThread.Terminated then Exit;
       nItem := nLogs[i];
 
-      nStr := DateTime2Str(nItem.FTime) + sLogField +        //时间
-              nItem.FWriter.FOjbect.ClassName + sLogField;   //类名
-      //xxxxx
-      
+      nStr := Copy(nItem.FWriter.FOjbect.ClassName, 1, 15);
+      nStr := DateTime2Str(nItem.FTime) + sLogField + nStr + sLogField;
+      //时间,类名
+
       if nItem.FWriter.FDesc <> '' then
         nStr := nStr + nItem.FWriter.FDesc + sLogField;      //描述
       nStr := nStr + nItem.FEvent;                           //事件

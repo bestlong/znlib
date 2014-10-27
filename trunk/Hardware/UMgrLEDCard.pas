@@ -149,6 +149,7 @@ type
     FName: string;          //名称
     FGroup: string;         //分组
     FDoublePaint: Boolean;  //双绘制,小语种翻译
+    FEnabled: Boolean;      //是否启用
 
     FIP: string;            //IP
     FPort: Integer;         //端口
@@ -433,6 +434,9 @@ begin
       gTruckQueueManager.SyncLock.Enter;
       try
         FNowItem := FOwner.FCards[nIdx];
+        if not FNowItem.FEnabled then Continue;
+        //ignor
+
         if FNowItem.FPicNum < 1 then
         begin
           DrawQueue(0);
@@ -1239,6 +1243,11 @@ begin
       if Assigned(nTmp) then
            FDoublePaint := nTmp.ValueAsString = '1'
       else FDoublePaint := False;
+
+      nTmp := nNode.FindNode('enable');
+      if Assigned(nTmp) then
+           FEnabled := nTmp.ValueAsString <> 'N'
+      else FEnabled := True;
 
       //------------------------------------------------------------------------
       nNode := nXML.Root.Nodes[nIdx].FindNode('head_area');
