@@ -32,6 +32,8 @@ type
     FStart,FEnd: Integer;           //数据范围
     FCardFlag: string;              //磁卡标识
     FCardLen: Integer;              //卡号长度
+    FCardCut: Integer;              //裁剪长度
+    FCardFull: Boolean;             //完整卡号
     FCard: string;                  //磁卡编号
   end;
 
@@ -328,13 +330,22 @@ begin
     nReader.FCard := nReader.FCard + IntToHex(FBuffer[nIdx], 2);
   //xxxxxx
 
-  nPos := Pos(nReader.FCardFlag, nReader.FCard);
-  if nPos < 1 then Exit;
-  //no find flag
+  if nReader.FCardFull then
+  begin
+    Result := True;
+    Exit;
+  end; //full card
 
-  nReader.FCard := Copy(nReader.FCard, nPos + Length(nReader.FCardFlag),
-                   nReader.FCardLen);
-  Result := Length(nReader.FCard) = nReader.FCardLen;
+  if nReader.FCardFlag <> '' then
+  begin
+    nPos := Pos(nReader.FCardFlag, nReader.FCard);
+    if nPos < 1 then Exit;
+    //no find flag
+  end;
+
+  nPos := Length(nReader.FCard) - nReader.FCardLen + 1;
+  nReader.FCard := Copy(nReader.FCard, nPos, nReader.FCardLen-nReader.FCardCut);
+  Result := Length(nReader.FCard) = nReader.FCardLen-nReader.FCardCut;
 end;
 
 //------------------------------------------------------------------------------
@@ -450,7 +461,7 @@ end;
 procedure TJMCardManager.LoadConfig(const nFile: string);
 var nIdx: Integer;
     nXML: TNativeXml;
-    nNode: TXmlNode;
+    nNode,nTmp: TXmlNode;
     nReader: PJMReaderItem;
 begin
   nXML := nil;
@@ -480,6 +491,12 @@ begin
 
         FCardFlag := NodeByName('cardflag').ValueAsString;
         FCardLen := NodeByName('cardlen').ValueAsInteger;
+        FCardCut := NodeByName('cardcut').ValueAsInteger;
+
+        nTmp := FindNode('cardfull');
+        if Assigned(nTmp) then
+             FCardFull := nTmp.ValueAsString = 'Y'
+        else FCardFull := False;
       end;
     end;
   finally

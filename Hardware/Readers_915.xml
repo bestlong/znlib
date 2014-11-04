@@ -8,6 +8,8 @@
 *.type: 0,进出;1.进;2.出;
 *.cardflag: 卡号起始标记
 *.cardlen: 卡号有效长度
+*.cardcut: 卡号需裁剪长度
+*.cardfull: 显示完整卡号 Y为显示,其它不显示
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-->
 <readers>
   <item id="R1" name="一期远距读头">
@@ -17,5 +19,7 @@
     <port>8000</port>    
     <cardflag>20020755919</cardflag>
     <cardlen>12</cardlen>
+    <cardcut>2</cardcut>
+    <cardfull>Y</cardfull>
   </item>
 </readers>

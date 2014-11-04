@@ -403,10 +403,16 @@ begin
     //new handle
   end;
 
-  nRet := Inventory_G2(nAddr, 0, 0, 0, @FBuffer, nLen, nNum, nReader.FHwnd);
-  //query card
-  if Terminated then Exit;
-  //thread exit
+  FOwner.FSyncLock.Enter;
+  try
+    nRet := Inventory_G2(nAddr, 0, 0, 0, @FBuffer, nLen, nNum, nReader.FHwnd);
+    //query card
+    
+    if Terminated then Exit;
+    //thread exit
+  finally
+    FOwner.FSyncLock.Leave;
+  end;
 
   if nRet = $30 then
   begin
