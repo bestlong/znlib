@@ -340,7 +340,13 @@ begin
   begin
     nPos := Pos(nReader.FCardFlag, nReader.FCard);
     if nPos < 1 then Exit;
-    //no find flag
+
+    nReader.FCard := Copy(nReader.FCard, nPos + Length(nReader.FCardFlag), 44);
+    //FFFF10320D01E20020755919017926600B42B0CCFFFF
+    
+    nPos := Pos(nReader.FCardFlag, nReader.FCard);
+    if nPos < 1 then Exit;
+    nReader.FCard := Copy(nReader.FCard, 1, nPos - 1);
   end;
 
   nPos := Length(nReader.FCard) - nReader.FCardLen + 1;
