@@ -695,6 +695,8 @@ begin
       begin
         AppendByte(nBuf, PERelayFrameControl(nHead).FVerify);
         Write(nBuf);
+
+        Sleep(500);
         ReadBytes(nBuf, cSize_ERelay_Control, False);
 
         if Assigned(nCtrl) then Continue;
@@ -714,7 +716,7 @@ begin
 
         AppendByte(nBuf, PERelayFrameDisplay(nHead).FVerify);
         Write(nBuf);
-        Sleep(420);
+        Sleep(500);
       end;
     end;
   end;
