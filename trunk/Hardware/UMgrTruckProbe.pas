@@ -324,10 +324,24 @@ end;
 
 //Desc: Æô¶¯
 procedure TProberManager.StartProber;
+var nIdx,nInt: Integer;
 begin
-  if not Assigned(FReader) then
-    FReader := TProberThread.Create(Self);
-  FReader.Wakeup;
+  nInt := 0;
+  //init
+
+  for nIdx:=Low(FHosts) to High(FHosts) do
+  if FHosts[nIdx].FEnable then
+  begin
+    Inc(nInt);
+    Break;
+  end;
+
+  if nInt > 0 then
+  begin
+    if not Assigned(FReader) then
+      FReader := TProberThread.Create(Self);
+    FReader.Wakeup;
+  end;
 end;
 
 //Desc: Í£Ö¹
