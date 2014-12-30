@@ -2,6 +2,7 @@
 <!--++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 节点: ports->item
 *.type: 表头类型
+*.conn: 链路(com,tcp)
 *.port: 通讯端口
 *.rate: 波特率
 *.databit: 数据位
@@ -16,6 +17,8 @@
 *.invalidlen: 需截除的尾长度
 *.datamirror: 数据头尾镜像(反向)
 *.dataenlarge: 数据放大倍数,用于吨-公斤互换
+*.hostip: 网络通讯时主机
+*.hostport: 网络通讯时端口
 
 节点: cameras->item
 *.host: 摄像机IP
@@ -39,6 +42,7 @@
   <ports>
 	<item id="P1" name="一期1号磅">
 		<type>T800</type>
+        <conn>tcp</conn>
 		<port>com14</port>
 		<rate>2400</rate>
 		<databit>7</databit>
@@ -53,6 +57,8 @@
 		<invalidlen>2</invalidlen>
 		<datamirror>0</datamirror>
 		<dataenlarge>0.001</dataenlarge>
+        <hostip>127.0.0.1</hostip>
+        <hostport>8000</hostport>
 	</item>
   </ports>
   <cameras>

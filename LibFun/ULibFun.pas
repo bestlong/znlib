@@ -69,7 +69,8 @@ function SplitStr(const nStr: string; const nList: TStrings; const nNum: Word;
 function AdjustListStrFormat(const nItems,nSymbol: string; const nAdd: Boolean;
  nFlag: string = ''; const nFlagEnd: Boolean = True): string;
 function AdjustListStrFormat2(const nList: TStrings; const nSymbol: string;
- const nAdd: Boolean; nFlag: string = ''; const nFlagEnd: Boolean = True): string;
+ const nAdd: Boolean; nFlag: string = ''; const nFlagEnd: Boolean = True;
+ const nListYet: Boolean = True): string;
 //格式化列表字符串
 
 function StrWithWidth(const nStr: string; const nWidth,nStyle: Byte;
@@ -498,13 +499,18 @@ end;
 //Parm: 内容;符号;是否添加;分隔符
 //Desc: 在nList的所有项前后,添加或删除nSymbol符号
 function AdjustListStrFormat2(const nList: TStrings; const nSymbol: string;
- const nAdd: Boolean; nFlag: string; const nFlagEnd: Boolean): string;
-var nStr: string;
+ const nAdd: Boolean; nFlag: string; const nFlagEnd: Boolean;
+ const nListYet: Boolean): string;
+var nStr,nBak: string;
     nIdx,nLen,nSLen: Integer;
 begin
   if nFlag = '' then
      nFlag := ';';
   nSLen := Length(nSymbol);
+
+  if nAdd and (not nListYet) then
+    nBak := nList.Text;
+  //备份内容
 
   for nIdx:=0 to nList.Count - 1 do
   begin
@@ -537,6 +543,10 @@ begin
 
   Result := CombinStr(nList, nFlag, nFlagEnd);
   //合并
+
+  if nAdd and (not nListYet) then
+    nList.Text := nBak;
+  //还原内容
 end;
 
 //Date: 2014-09-17
