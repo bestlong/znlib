@@ -14,7 +14,8 @@
 *.packlen: 表头数据包长
 *.splittag: 多段分隔符
 *.splitpos: 有效段索引,从1开始,0时不分段
-*.invalidlen: 需截除的尾长度
+*.invalidbegin: 需截除的首长度
+*.invalidend: 需截除的尾长度
 *.datamirror: 数据头尾镜像(反向)
 *.dataenlarge: 数据放大倍数,用于吨-公斤互换
 *.hostip: 网络通讯时主机
@@ -54,7 +55,8 @@
 		<packlen>16</packlen>
 		<splittag>$20</splittag>
 		<splitpos>0</splitpos>
-		<invalidlen>2</invalidlen>
+		<invalidbegin>0</invalidbegin>
+		<invalidend>2</invalidend>
 		<datamirror>0</datamirror>
 		<dataenlarge>0.001</dataenlarge>
         <hostip>127.0.0.1</hostip>

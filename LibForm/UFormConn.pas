@@ -285,7 +285,10 @@ begin
   else nList := TStringList.Create;
 
   try
-    if not (Assigned(nParam) or LoadConnecteDBConfig(nList, nFile)) then Exit;
+    if not (Assigned(nParam) or
+            LoadConnecteDBConfig(nList, nFile, nDBName)) then Exit;
+    //xxxxx
+    
     if nDBName = '' then
          nStr := nList.Values[sConn_Key_DBName]
     else nStr := nDBName;
