@@ -82,7 +82,8 @@ type
     FPackLen: Integer;               //数据包长
     FSplitTag: string;               //分段标识
     FSplitPos: Integer;              //有效段
-    FInvalidLen: Integer;            //截尾长度
+    FInvalidBegin: Integer;          //截首长度
+    FInvalidEnd: Integer;            //截尾长度
     FDataMirror: Boolean;            //镜像数据
     FDataEnlarge: Single;            //放大倍数
 
@@ -306,9 +307,20 @@ begin
       nPort.FCharBegin := Char(StrToInt(NodeByName('charbegin').ValueAsString));
       nPort.FCharEnd := Char(StrToInt(NodeByName('charend').ValueAsString));
       nPort.FPackLen := NodeByName('packlen').ValueAsInteger;
+
+      nTmp := FindNode('invalidlen');
+      if Assigned(nTmp) then //直接指定截取长度
+      begin
+        nPort.FInvalidBegin := 0;
+        nPort.FInvalidEnd := nTmp.ValueAsInteger;
+      end else
+      begin
+        nPort.FInvalidBegin := NodeByName('invalidbegin').ValueAsInteger;
+        nPort.FInvalidEnd := NodeByName('invalidend').ValueAsInteger;
+      end;
+
       nPort.FSplitTag := Char(StrToInt(NodeByName('splittag').ValueAsString));
       nPort.FSplitPos := NodeByName('splitpos').ValueAsInteger;
-      nPort.FInvalidLen := NodeByName('invalidlen').ValueAsInteger;
       nPort.FDataMirror := NodeByName('datamirror').ValueAsInteger = 1;
       nPort.FDataEnlarge := NodeByName('dataenlarge').ValueAsFloat;
 
@@ -605,15 +617,20 @@ begin
       //有效数据
     end;
 
-    if nPort.FInvalidLen > 0 then
-      System.Delete(nPort.FCOMData, Length(nPort.FCOMData)-nPort.FInvalidLen+1,
-                    nPort.FInvalidLen);
+    if nPort.FInvalidBegin > 0 then
+      System.Delete(nPort.FCOMData, 1, nPort.FInvalidBegin);
+    //首部无效数据
+
+    if nPort.FInvalidEnd > 0 then
+      System.Delete(nPort.FCOMData, Length(nPort.FCOMData)-nPort.FInvalidEnd+1,
+                    nPort.FInvalidEnd);
     //尾部无效数据
 
     if nPort.FDataMirror then
       nPort.FCOMData := MirrorStr(nPort.FCOMData);
     //数据反转
 
+    nPort.FCOMData := Trim(nPort.FCOMData);
     Result := IsNumber(nPort.FCOMData, False);
     Exit;
   end;
