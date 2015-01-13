@@ -7,6 +7,7 @@
 *.tunnel: 所在通道
 *.printer: 绑定打印
 *.type: 读卡器类型,(0.现场;1.进厂;2.出厂)
+*.uselabel: 是否与电子签配对使用
 *.ledtext: LED显示内容
 +++++++++++++++++++++++++++++++++++ -->
 <readers>
@@ -25,6 +26,7 @@
       <ip>192.168.3.91</ip>
       <port>8000</port>
       <tunnel>FH002</tunnel>
+      <uselabel>N</uselabel>
       <ledtext>  华新水泥    百年品质  </ledtext>
     </item>
   </readkeep>

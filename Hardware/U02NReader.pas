@@ -27,6 +27,12 @@ type
     FTunnel : string;            //通道
     FPrinter: string;            //打印
     FLEDText: string;            //LED
+
+    FEEnable: Boolean;           //启用电子签
+    FELabel : string;            //通道读取的电子标签
+    FELast  : Int64;             //上次触发
+    FETimeOut: Boolean;          //电子签超时
+    FRealLabel: string;          //实际业务的电子标签
   end;
 
   PReaderCard = ^TReaderCard;
@@ -84,6 +90,9 @@ type
     procedure StopReader;
     procedure StopMe(const nFree: Boolean = True);
     //启停读头
+    procedure SetRealELabel(const nTunnel,nELabel: string);
+    procedure ActiveELabel(const nTunnel,nELabel: string);
+    //激活电子签
     property ServerPort: Integer read FSrvPort write FSrvPort;
     property KeepTime: Integer read FKeepTime write FKeepTime;
     property OnCardIn: TOnCard read FCardIn write FCardIn;
@@ -189,6 +198,78 @@ begin
   FWaiter.Interval := INFINITE;
 end;
 
+//Date: 2015-01-11
+//Parm: 电子签号
+//Desc: 设置nELabel活动时间
+procedure T02NReader.ActiveELabel(const nTunnel,nELabel: string);
+var nStr: string;
+    i,nIdx: Integer;
+    nHost: PReaderHost;
+    nCard: PReaderCard;
+begin
+  FSyncLock.Enter;
+  try
+    for nIdx:=FReaders.Count - 1 downto 0 do
+    begin
+      nHost := FReaders[nIdx];
+      if CompareText(nTunnel, nHost.FTunnel) = 0 then
+      begin
+        if (nHost.FRealLabel = '') or (nHost.FRealLabel = nELabel) then
+        begin
+          nHost.FELabel := nELabel;
+          nHost.FELast := GetTickCount;
+
+          if nHost.FETimeOut then
+          begin
+            nHost.FETimeOut := False;
+            //解除超时
+
+            for i:=FCards.Count - 1 downto 0 do
+            begin
+              nCard := FCards[i];
+              if nCard.FHost <> nHost then Continue;
+
+              nCard.FEvent := False;
+              //重新触发业务
+            end;            
+          end;
+        end;
+        
+        Exit;
+      end;
+    end;
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
+//Date: 2015-01-11
+//Parm: 通道号;电子签
+//Desc: 设置nCard对应的电子签
+procedure T02NReader.SetRealELabel(const nTunnel, nELabel: string);
+var nStr: string;
+    nIdx: Integer;
+    nHost: PReaderHost;
+begin
+  FSyncLock.Enter;
+  try
+    for nIdx:=FReaders.Count - 1 downto 0 do
+    begin
+      nHost := FReaders[nIdx];
+      if CompareText(nTunnel, nHost.FTunnel) = 0 then
+      begin
+        nHost.FELast := GetTickCount;
+        nHost.FETimeOut := False;
+
+        nHost.FRealLabel := nELabel;
+        Exit;
+      end;
+    end;
+  finally
+    FSyncLock.Leave;
+  end;
+end;
+
 procedure T02NReader.LoadConfig(const nFile: string);
 var nIdx,nInt: Integer;
     nXML: TNativeXml;
@@ -220,7 +301,9 @@ begin
           FID := nNode.NodeByName('id').ValueAsString;
           FIP := nNode.NodeByName('ip').ValueAsString;
           FPort := nNode.NodeByName('port').ValueAsInteger;
+
           FTunnel := nNode.NodeByName('tunnel').ValueAsString;
+          FEEnable := False;
 
           FFun := rfSite;
           nTP := nNode.NodeByName('type');
@@ -257,11 +340,17 @@ begin
           FIP := nNode.NodeByName('ip').ValueAsString;
           FPort := nNode.NodeByName('port').ValueAsInteger;
           FTunnel := nNode.NodeByName('tunnel').ValueAsString;
-
+                                          
           nTP := nNode.NodeByName('ledtext');
           if Assigned(nTP) then
                FLEDText := nTP.ValueAsString
           else FLEDText := '  精品水泥  ' + '  值得信赖  ';
+
+          nNode := nNode.FindNode('uselabel');
+          //使用电子签
+          if Assigned(nNode) then
+               FEEnable := nNode.ValueAsString <> 'N'
+          else FEEnable := True; 
         end;
       end;
     end;
@@ -299,11 +388,24 @@ begin
             Continue;
           end; //已无效
 
-          if Assigned(nPCard.FHost) and (nPCard.FHost.FType = rtKeep) and
-             (GetTickCount - nPCard.FLast > FKeepTime) then
+          if Assigned(nPCard.FHost) and (nPCard.FHost.FType = rtKeep) then
           begin
-            nPCard.FEvent := False;
-            nPCard.FOldOne := True;
+            if GetTickCount - nPCard.FLast > FKeepTime then
+            begin
+              nPCard.FEvent := False;
+              nPCard.FOldOne := True;
+
+              nPCard.FHost.FRealLabel := '';
+              //卡片抽走,清空业务标签
+            end;
+
+            if nPCard.FHost.FEEnable and (nPCard.FHost.FRealLabel <> '') and //使用电子签
+               (not nPCard.FHost.FETimeOut) and                              //业务未超时
+               (GetTickCount - nPCard.FHost.FELast > FKeepTime * 3) then
+            begin
+              nPCard.FEvent := False;
+              nPCard.FHost.FETimeOut := True;
+            end;
           end; //已超时
 
           if nPCard.FEvent then
@@ -334,7 +436,8 @@ begin
         FSyncLock.Leave;
       end;
 
-      if nCard.FOldOne then
+      if nCard.FOldOne or
+         (Assigned(nPCard.FHost) and nPCard.FHost.FETimeOut) then
       begin
         if Assigned(FCardOut) then FCardOut(nHost, nCard);
       end else
@@ -429,12 +532,15 @@ begin
       New(nPCard);
       FCards.Add(nPCard);
 
+      if nInt >= 0 then
+      begin
+        nPCard.FHost := FReaders[nInt];
+        nPCard.FHost.FRealLabel := '';
+        nPCard.FHost.FETimeOut := False;
+      end else nPCard.FHost := nil;
+
       nPCard.FCard := nCard;
       nPCard.FEvent := False;
-
-      if nInt < 0 then
-           nPCard.FHost := nil
-      else nPCard.FHost := FReaders[nInt];
       nPCard.FInTime := GetTickCount;
     end;
 

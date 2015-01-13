@@ -3,6 +3,7 @@
 节点: readers.reader
 *.id: 节点标识
 *.ip,port: 读卡器地址
+*.tunnel: 通道号
 *.enable: N,关闭;其它开启.
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-->
 <HY_RFID102>
@@ -10,6 +11,7 @@
     <reader id="01001">
       <ip>192.168.0.201</ip>
       <port>6000</port>
+      <tunnel>FH001</tunnel>
       <enable>Y</enable>
     </reader>
   </readers>
