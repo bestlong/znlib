@@ -22,6 +22,7 @@ type
     FPort   : Integer;         //端口
     FHwnd   : LongInt;         //通讯句柄
     FCard   : string;          //卡号
+    FTunnel : string;          //通道号
     FEnable : Boolean;         //是否启用
     FLocked : Boolean;         //是否锁定
     FLastActive: Int64;        //上次活动
@@ -232,6 +233,11 @@ begin
         if FEnable then
           Self.FEnable := True;
         //有效节点
+
+        nTmp := FindNode('tunnel');
+        if Assigned(nTmp) then
+          FTunnel := nTmp.ValueAsString;
+        //通道号
       end;
     end;
   finally
