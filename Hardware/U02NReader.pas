@@ -202,8 +202,7 @@ end;
 //Parm: 电子签号
 //Desc: 设置nELabel活动时间
 procedure T02NReader.ActiveELabel(const nTunnel,nELabel: string);
-var nStr: string;
-    i,nIdx: Integer;
+var i,nIdx: Integer;
     nHost: PReaderHost;
     nCard: PReaderCard;
 begin
@@ -247,8 +246,7 @@ end;
 //Parm: 通道号;电子签
 //Desc: 设置nCard对应的电子签
 procedure T02NReader.SetRealELabel(const nTunnel, nELabel: string);
-var nStr: string;
-    nIdx: Integer;
+var nIdx: Integer;
     nHost: PReaderHost;
 begin
   FSyncLock.Enter;

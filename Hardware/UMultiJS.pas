@@ -149,6 +149,8 @@ type
   //事件
   TMultiJSProc = procedure (const nTunnel: PMultiJSTunnel);
   //动作
+  TMultiJSGetTruck = function (const nTruck,nBill: string): string;
+  //获取车牌
 
   TMultiJSManager = class(TObject)
   private
@@ -168,6 +170,7 @@ type
     FChangeSync: TMultiJSEvent;
     FSaveDataProc: TMultiJSProc;
     FSaveDataEvent: TMultiJSEvent;
+    FGetTruck: TMultiJSGetTruck;
     //事件相关
   protected
     procedure DisposeHost(const nHost: PMultiJSHost);
@@ -207,6 +210,7 @@ type
     property ChangeThread: TMultiJSEvent read FChangeThread write FChangeThread;
     property SaveDataProc: TMultiJSProc read FSaveDataProc write FSaveDataProc;
     property SaveDataEvent: TMultiJSEvent read FSaveDataEvent write FSaveDataEvent;
+    property GetTruckProc: TMultiJSGetTruck read FGetTruck write FGetTruck;
     //属性相关
   end;
 
@@ -737,7 +741,11 @@ begin
         FAddr := nPT.FTunnel;
         FDelay := nPT.FDelay;
 
-        nStr := Copy(nTruck, 1, cMultiJS_Truck);
+        if Assigned(FGetTruck) then
+             nStr := FGetTruck(nTruck, Trim(nBill))
+        else nStr := nTruck;
+
+        nStr := Copy(nStr, 1, cMultiJS_Truck);
         nStr := nStr + StringOfChar(' ', cMultiJS_Truck - Length(nStr));
         StrPCopy(@FTruck[0], nStr);
 
